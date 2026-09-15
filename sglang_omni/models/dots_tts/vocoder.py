@@ -383,28 +383,30 @@ class DotsTTSStreamingVocoder(
                 self.merge_steps,
                 self.codec.patch_size * self.merge_steps,
             )
-            if self.enable_streaming_audio_vae_cuda_graph:
-                self._slot_pool.graph_runner = self._capture_step_graphs(
-                    self._slot_pool
-                )
+            self._slot_pool.graph_runner = (
+                self.capture_step_graphs(self._slot_pool)
+                if self.enable_streaming_audio_vae_cuda_graph
+                else None
+            )
         return self._slot_pool
 
-    def _capture_step_graphs(
+    def capture_step_graphs(
         self, pool: DotsVocoderSlotPool
     ) -> DotsVocoderGraphRunner | None:
-        if self.codec.device.type != "cuda":
+        if self.codec.device.type == "cuda":
+            runner = DotsVocoderGraphRunner(
+                forward=pool.forward,
+                new_inputs=pool.new_step_inputs,
+                device=pool.device,
+            )
+            runner.capture(self.cuda_graph_capture_keys())
+        else:
             logger.warning(
                 "dots.tts streaming AudioVAE CUDA graphs need a CUDA codec device, "
                 "got %s. Staying eager.",
                 self.codec.device,
             )
-            return None
-        runner = DotsVocoderGraphRunner(
-            forward=pool.forward,
-            new_inputs=pool.new_step_inputs,
-            device=pool.device,
-        )
-        runner.capture(self.cuda_graph_capture_keys())
+            runner = None
         return runner
 
     def cuda_graph_capture_keys(self) -> list[tuple[int, int]]:
@@ -416,10 +418,8 @@ class DotsTTSStreamingVocoder(
 
     @property
     def cuda_graph_count(self) -> int:
-        pool = self._slot_pool
-        if pool is None or pool.graph_runner is None:
-            return 0
-        return len(pool.graph_runner.captured_keys)
+        runner = None if self._slot_pool is None else self._slot_pool.graph_runner
+        return 0 if runner is None else len(runner.captured_keys)
 
     def ensure_slot(self, state: DotsStreamState) -> None:
         if state.slot is not None:

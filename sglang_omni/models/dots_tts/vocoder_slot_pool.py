@@ -205,12 +205,16 @@ class DotsVocoderSlotPool:
         )
 
         self._inference._validate_stream_latents(packed)
-        outputs = None
-        if self.graph_runner is not None:
-            outputs = self.graph_runner.run(packed, hidden_h, hidden_c, window, valid)
-        if outputs is None:
-            outputs = self.forward(packed, hidden_h, hidden_c, window, valid)
-        audio_window, hidden_h, hidden_c, new_window = outputs
+        replayed = (
+            None
+            if self.graph_runner is None
+            else self.graph_runner.run(packed, hidden_h, hidden_c, window, valid)
+        )
+        audio_window, hidden_h, hidden_c, new_window = (
+            self.forward(packed, hidden_h, hidden_c, window, valid)
+            if replayed is None
+            else replayed
+        )
 
         self._lstm_h[:, slot_index, :] = hidden_h
         self._lstm_c[:, slot_index, :] = hidden_c

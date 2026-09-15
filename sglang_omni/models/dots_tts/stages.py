@@ -489,7 +489,7 @@ def create_vocoder_executor(
         vocoder.merge_steps,
         vocoder.stream_slots,
         max_batch_size,
-        vocoder._stream_chunk_batch_max,
+        vocoder.stream_chunk_batch_max,
         max_batch_wait_ms,
     )
     return vocoder
