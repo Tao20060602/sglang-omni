@@ -2428,6 +2428,9 @@ def test_qwen3_tts_window_frames_build_the_window_runner(
         0
     ]._compile_fresh_frames == frozenset({8})
     assert compiled._initial_incremental_decode_graphs._compile_fresh_frames == (
+        frozenset({1, 2})
+    )
+    assert scheduler._initial_incremental_decode_graphs._compile_fresh_frames == (
         frozenset()
     )
 
@@ -8114,3 +8117,5 @@ def test_qwen3_tts_scheduler_adopts_prepared_tensors_after_the_preprocessing_eve
     assert waited == [ready]
     assert [stream for _, stream in recorded] == [scheduler_stream] * 4
     assert any(tensor is embeds for tensor, _ in recorded)
+
+
