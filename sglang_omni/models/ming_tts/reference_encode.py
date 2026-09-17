@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import onnxruntime
 import torch
 import torchaudio
 import torchaudio.functional as F
+from numpy.typing import ArrayLike
 
 from sglang_omni.models.ming_omni.talker.audio_vae.modeling_audio_vae import AudioVAE
 from sglang_omni.models.ming_tts.payload_types import (
@@ -43,7 +42,7 @@ class MingSpeakerEmbeddingExtractor:
         )
         self.target_sr = int(target_sr)
 
-    def __call__(self, waveform: Any) -> torch.Tensor:
+    def __call__(self, waveform: ArrayLike | torch.Tensor) -> torch.Tensor:
         if not isinstance(waveform, torch.Tensor):
             waveform = torch.as_tensor(waveform)
         feat = cached_fbank(
