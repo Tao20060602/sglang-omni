@@ -228,7 +228,7 @@ def _dump_cuda_storage_handle(tensor: torch.Tensor) -> CudaStorageHandle:
 
 
 def _load_cuda_storage_handle(
-    storage_meta: dict[str, Any],
+    storage_meta: CudaStorageHandle,
     *,
     device: torch.device,
 ) -> torch.Tensor:
@@ -785,7 +785,7 @@ class CudaIpcRelay(Relay):
         *,
         device: torch.device,
     ) -> torch.Tensor:
-        ipc_meta = metadata["cuda_ipc"]
+        ipc_meta: CudaPoolInfo = metadata["cuda_ipc"]
         pool_id = ipc_meta["pool_id"]
         pool = self._remote_pools.get(pool_id)
         if pool is None:
@@ -1094,7 +1094,7 @@ class CudaIpcRelay(Relay):
         *,
         source_pool_id: str,
         source_page_indices: tuple[int, ...],
-        destination_ref: dict[str, Any],
+        destination_ref: dict[str, dict[str, str]],
         transfer_id: str | None = None,
     ) -> _ReceiverAckOperation[Never]:
         pool = self._kv_pools.get(source_pool_id)
@@ -1139,7 +1139,7 @@ class CudaIpcRelay(Relay):
 
     async def get_kv_pages(
         self,
-        metadata: dict[str, Any],
+        metadata: CudaKvMetadata,
         *,
         destination_pool_id: str,
         source_page_indices: tuple[int, ...],
