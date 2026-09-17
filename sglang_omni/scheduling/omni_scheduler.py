@@ -118,7 +118,7 @@ class _PendingStreamIngress:
     __slots__ = ("chunks", "done")
 
     def __init__(self) -> None:
-        self.chunks: list[Any] = []
+        self.chunks: list[StreamItem] = []
         self.done = False
 
 
@@ -926,7 +926,7 @@ class OmniScheduler(Generic[RequestDataT]):
                 self._reject_queue_full(payload)
                 continue
             ingress = self._pending_stream_ingress.get(req_id)
-            buffered_chunks: list[Any] = []
+            buffered_chunks: list[StreamItem] = []
             if ingress is not None and ingress.chunks:
                 # Move chunks onto the payload; the entry (and its done flag)
                 # stays until the built request consumes it, so a deferred

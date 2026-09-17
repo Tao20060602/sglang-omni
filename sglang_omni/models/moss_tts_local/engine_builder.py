@@ -164,11 +164,14 @@ class MossTtsLocalEngineBuilder(TtsEngineBuilder):
             get_decode_cuda_graph_bs,
         )
 
+        batch_sizes = get_decode_cuda_graph_bs(server_args)
+        assert batch_sizes is not None
+
         # note (luojiaxuan): Also graph the per-frame local-transformer decode
         # (1 + n_vq micro-steps and 13 seeded sampling passes per frame):
         # eager it is kernel-launch-bound at ~22 ms/frame independent of batch
         # size.
-        model.init_frame_decode_graphs(list(get_decode_cuda_graph_bs(server_args)))
+        model.init_frame_decode_graphs(list(batch_sizes))
 
     def make_model_runner(
         self,

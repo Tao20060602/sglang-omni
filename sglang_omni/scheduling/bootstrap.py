@@ -88,7 +88,7 @@ def _hidden_capture_max_tokens() -> int:
     from sglang.srt.runtime_context import get_exec, get_model, get_schedule
 
     chunked_prefill_size = get_schedule().chunked_prefill_size
-    candidates: list[Any] = []
+    candidates: list[int | None] = []
     if chunked_prefill_size is not None and chunked_prefill_size > 0:
         candidates.append(chunked_prefill_size)
     else:
@@ -122,7 +122,9 @@ def create_sglang_infrastructure(
     total_gpu_memory_fraction: float | None = None,
     defer_cuda_graph_capture: bool = False,
     enable_prefill_input_embeds: bool = False,
-    before_memory_pool: Callable[[Any], None] | None = None,
+    before_memory_pool: (
+        Callable[["ModelWorker | MlxTpModelWorker"], None] | None
+    ) = None,
     mlx_model_path: str | None = None,
     mlx_model_revision: str | None = None,
 ):

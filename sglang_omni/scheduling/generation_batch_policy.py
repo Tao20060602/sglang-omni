@@ -21,13 +21,13 @@ _MISSING = object()
 _PREFILL_PADDING_FACTOR = 2
 
 
-def get_decode_cuda_graph_max_bs(server_args: object) -> Any:
+def get_decode_cuda_graph_max_bs(server_args: object) -> int | None:
     """Read the resolved SGLang decode CUDA Graph batch cap."""
     cfg = resolved_view(server_args)
     return cfg.cuda_graph_config.decode.max_bs
 
 
-def get_decode_cuda_graph_bs(server_args: object) -> Any:
+def get_decode_cuda_graph_bs(server_args: object) -> list[int] | None:
     """Read the resolved SGLang decode CUDA Graph batch buckets."""
     cfg = resolved_view(server_args)
     return cfg.cuda_graph_config.decode.bs
