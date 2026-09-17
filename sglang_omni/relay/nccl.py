@@ -95,7 +95,7 @@ class Connection:
     def ensure_remote_agent(
         self,
         remote_engine_id: str,
-        remote_meta_bytes: Any,
+        remote_meta_bytes: NcclAgentMetadata,
     ) -> int:
         target_rank = remote_meta_bytes.get("rank", 0)
         if target_rank not in self.recv_ranks:

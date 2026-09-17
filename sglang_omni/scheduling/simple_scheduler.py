@@ -15,8 +15,9 @@ import logging
 import queue as _queue_mod
 import threading
 import time
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
+from sglang_omni.proto.request import StagePayload
 from sglang_omni.scheduling.messages import IncomingMessage, OutgoingMessage
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class SimpleScheduler:
         max_batch_size: int = 1,
         max_batch_wait_ms: int = 0,
         batch_wait_when_idle: bool = True,
-        request_cost_fn: Callable[[Any], int] | None = None,
+        request_cost_fn: Callable[[StagePayload], int] | None = None,
         max_batch_cost: int | None = None,
         max_concurrency: int = 1,
         abort_callback: Callable[[str], None] | None = None,
