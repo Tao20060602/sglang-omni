@@ -36,6 +36,7 @@ from sglang_omni.serve.speech_limits import (
 )
 from sglang_omni.serve.speech_service import (
     PreparedSpeechRequest,
+    SpeechReferenceDescriptor,
     SpeechRequestValidator,
 )
 from sglang_omni.utils.json import JsonValue
@@ -447,7 +448,7 @@ class SpeechWebSocketSession:
         sentence: str = "",
         *,
         stream: bool | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         config = config or self.config
         assert config is not None
         payload = config.model_dump(
@@ -458,7 +459,7 @@ class SpeechWebSocketSession:
         payload["stream"] = config.stream_audio if stream is None else stream
         return payload
 
-    def _config_reference_descriptors(self) -> list[dict[str, Any]]:
+    def _config_reference_descriptors(self) -> list[SpeechReferenceDescriptor]:
         if self.config_prepared_request is None:
             return []
         return self.config_prepared_request.reference_descriptors
