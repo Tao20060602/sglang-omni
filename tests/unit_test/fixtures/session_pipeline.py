@@ -87,7 +87,7 @@ def worker(spec, ready):
         await stage.start()
         ready.set()
         await stage.run()
-        assert not stage.scheduler._sessions
+        assert not stage.scheduler.sessions
 
     asyncio.run(run())
 
@@ -197,4 +197,4 @@ def compute_registered(scheduler, payload):
 
     scheduler.inbox.put(IncomingMessage(payload.request_id, "new_request", payload))
     message = scheduler.inbox.get_nowait()
-    return scheduler._compute(message.data)
+    return scheduler.compute(message.data)
