@@ -6,6 +6,8 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -13,6 +15,9 @@ import torch.nn as nn
 
 from sglang_omni.models.weight_loader import resolve_model_path
 from sglang_omni.preprocessing.cache_key import hash_bytes, reference_path_cache_key
+
+if TYPE_CHECKING:
+    from sglang_omni.models.minicpm_o.components.token2wav.vocoder import SpeakerPrompt
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +37,8 @@ class MiniCPMOCode2Wav(nn.Module):
         prompt_wav: str | None = None,
     ) -> None:
         super().__init__()
-        try:
-            from stepaudio2 import Token2wav
-        except ImportError as exc:
-            raise ImportError(
-                "MiniCPM-o audio output requires stepaudio2; install the "
-                "minicpm-o extra (pip install 'sglang-omni[minicpm-o]')"
-            ) from exc
+        from sglang_omni.models.minicpm_o.components.token2wav.vocoder import Token2Wav
 
-        # note (MayDomine): Token2wav allocates on the current CUDA device.
         dev = torch.device(device)
         if dev.type != "cuda":
             raise ValueError(f"Token2wav requires a CUDA device, got {device}")
@@ -54,8 +52,8 @@ class MiniCPMOCode2Wav(nn.Module):
                 "checkpoint's assets/token2wav directory next to the weights"
             )
         with self._device_ctx:
-            self.token2wav = Token2wav(
-                asset_dir, float16=float16, n_timesteps=n_timesteps
+            self.token2wav = Token2Wav(
+                Path(asset_dir), device=dev, float16=float16, n_timesteps=n_timesteps
             )
 
         if prompt_wav is None:
@@ -84,9 +82,7 @@ class MiniCPMOCode2Wav(nn.Module):
             waveform = self._vocode(tokens, reference)
         return {"waveform": waveform, "sample_rate": OUTPUT_SAMPLE_RATE}
 
-    def _get_prompt(
-        self, prompt_wav: str | bytes | None
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _get_prompt(self, prompt_wav: str | bytes | None) -> SpeakerPrompt:
         if prompt_wav is None:
             raise ValueError("No speaker-reference audio supplied or default available")
         prompt_key = (
@@ -104,9 +100,9 @@ class MiniCPMOCode2Wav(nn.Module):
                 with tempfile.NamedTemporaryFile(suffix=".wav") as reference:
                     reference.write(prompt_wav)
                     reference.flush()
-                    prompt = t2w._prepare_prompt(reference.name)
+                    prompt = t2w.prepare_prompt(reference.name)
             else:
-                prompt = t2w._prepare_prompt(prompt_wav)
+                prompt = t2w.prepare_prompt(prompt_wav)
             t2w.cache = prompt
             self._prompt_cache_key = prompt_key
         return t2w.cache
@@ -119,25 +115,22 @@ class MiniCPMOCode2Wav(nn.Module):
             prompt_speech_tokens_lens,
             spk_emb,
             prompt_mels,
-            prompt_mels_lens,
         ) = self._get_prompt(prompt_wav)
 
-        speech_tokens = torch.tensor([tokens], dtype=torch.int32, device="cuda")
+        speech_tokens = torch.tensor([tokens], dtype=torch.int32, device=t2w.device)
         speech_tokens_lens = torch.tensor(
-            [speech_tokens.shape[1]], dtype=torch.int32, device="cuda"
+            [speech_tokens.shape[1]], dtype=torch.int32, device=t2w.device
         )
-        with torch.amp.autocast(
-            "cuda", dtype=torch.float16 if t2w.float16 else torch.float32
-        ):
+        with torch.amp.autocast("cuda", dtype=torch.float16, enabled=t2w.float16):
             mel = t2w.flow.inference(
                 speech_tokens,
                 speech_tokens_lens,
                 prompt_speech_tokens,
                 prompt_speech_tokens_lens,
                 prompt_mels,
-                prompt_mels_lens,
                 spk_emb,
                 t2w.n_timesteps,
             )
-        wav, _ = t2w.hift(speech_feat=mel)
+        # note (MayDomine): HiFT stays FP32 when the flow runs in half precision.
+        wav, _ = t2w.hift(speech_feat=mel.float())
         return wav.reshape(-1).float().cpu().numpy()

@@ -1,4 +1,7 @@
 import base64
+import os
+import subprocess
+import sys
 import threading
 from contextlib import nullcontext
 from pathlib import Path
@@ -18,6 +21,88 @@ from sglang_omni.models.minicpm_o.routing import (
 from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.scheduling.messages import IncomingMessage
 from tests.unit_test.pipeline.helpers import run_scheduler
+
+
+def test_native_vocoder_import_does_not_require_legacy_packages():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import importlib.abc
+import sys
+
+class BlockLegacy(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in {
+            "stepaudio2", "s3tokenizer", "minicpmo", "hyperpyyaml"
+        }:
+            raise ImportError(f"Legacy dependency requested: {fullname}")
+
+sys.meta_path.insert(0, BlockLegacy())
+from sglang_omni.models.minicpm_o.components.token2wav.vocoder import Token2Wav
+""",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_native_tokenizer_preserves_fsq_rounding():
+    from sglang_omni.models.minicpm_o.components.token2wav.speech_tokenizer_model import (
+        FSQCodebook,
+    )
+
+    quantizer = FSQCodebook(dim=8)
+    with torch.no_grad():
+        quantizer.project_down.weight.copy_(torch.eye(8))
+        quantizer.project_down.bias.zero_()
+    values = torch.tensor([-0.99, -0.5002, -0.4998, 0.0, 0.4998, 0.5002, 0.99])
+    hidden = torch.atanh(values).reshape(1, -1, 1).expand(1, -1, 8)
+    codes = quantizer.encode(hidden)
+    assert codes.tolist() == [[0, 0, 3280, 3280, 3280, 6560, 6560]]
+
+
+@pytest.mark.parametrize(
+    "tag",
+    ["!new:os.system", "!!python/object/apply:os.system", "!new:unknown.Component"],
+)
+def test_flow_loader_rejects_unknown_python_tags(tmp_path, tag):
+    import yaml
+
+    from sglang_omni.models.minicpm_o.components.token2wav.vocoder import load_flow
+
+    config = tmp_path / "flow.yaml"
+    config.write_text(f"flow: {tag} {{}}\n")
+    with pytest.raises(yaml.constructor.ConstructorError):
+        load_flow(config)
+
+
+@pytest.mark.parametrize("steps", [0, -1])
+def test_vocoder_rejects_invalid_denoising_steps(tmp_path, steps):
+    from sglang_omni.models.minicpm_o.components.token2wav.vocoder import Token2Wav
+
+    with pytest.raises(ValueError, match="n_timesteps must be positive"):
+        Token2Wav(tmp_path, device=torch.device("cpu"), n_timesteps=steps)
+
+
+@pytest.mark.accelerator
+@pytest.mark.parametrize("float16", [False, True])
+def test_native_vocoder_with_checkpoint(float16):
+    checkpoint = os.environ.get("MINICPMO_CHECKPOINT")
+    if not checkpoint or not torch.cuda.is_available():
+        pytest.skip("Set MINICPMO_CHECKPOINT and provide CUDA for vocoder validation")
+    model = MiniCPMOCode2Wav(checkpoint, device="cuda:0", float16=float16)
+    output = model(codec_tokens=torch.tensor([1498, 1734, 3732, 3726, 3645]))
+    waveform = output["waveform"]
+    assert output["sample_rate"] == 24000
+    assert waveform.dtype == np.float32
+    assert waveform.shape == (4800,)
+    assert np.isfinite(waveform).all()
+    assert np.max(np.abs(waveform)) > 1e-5
+    assert np.max(np.abs(waveform)) <= 0.99
 
 
 def _data_uri(audio):
@@ -118,7 +203,7 @@ def test_invalid_base64_reference_is_rejected():
 def _model(prepare_prompt):
     model = MiniCPMOCode2Wav.__new__(MiniCPMOCode2Wav)
     torch.nn.Module.__init__(model)
-    model.token2wav = SimpleNamespace(cache=None, _prepare_prompt=prepare_prompt)
+    model.token2wav = SimpleNamespace(cache=None, prepare_prompt=prepare_prompt)
     model._prompt_cache_key = None
     model._prompt_wav = None
     model._device_ctx = nullcontext()

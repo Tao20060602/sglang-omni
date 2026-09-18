@@ -117,9 +117,8 @@ fun-cosyvoice3 = [
 ]
 
 minicpm-o = [
-    # Provides the top-level stepaudio2 package (Token2wav) and bundles
-    # s3tokenizer; [tts] pulls hyperpyyaml/onnxruntime.
-    "minicpmo-utils[tts]==1.0.6",
+    "einops>=0.8.1",
+    "onnx>=1.18.0",
 ]
 
 [project.scripts]
@@ -172,4 +171,5 @@ version = {attr = "sglang_omni.__version__"}
 "sglang_omni.models.auk" = ["LICENSE"]
 "sglang_omni.models.fishaudio_s2_pro" = ["fish_speech/configs/*.yaml"]
 "sglang_omni.models.higgs_tts" = ["configs/*.json"]
+"sglang_omni.models.minicpm_o.components.token2wav" = ["THIRD_PARTY_NOTICES.md", "licenses/*.txt"]
 "sglang_omni.models.zonos2" = ["moe_configs/*/*.json"]
