@@ -204,9 +204,9 @@ def _model(prepare_prompt):
     model = MiniCPMOCode2Wav.__new__(MiniCPMOCode2Wav)
     torch.nn.Module.__init__(model)
     model.token2wav = SimpleNamespace(cache=None, prepare_prompt=prepare_prompt)
-    model._prompt_cache_key = None
-    model._prompt_wav = None
-    model._device_ctx = nullcontext()
+    model.prompt_cache_key = None
+    model.default_prompt_wav = None
+    model.device_context = nullcontext()
     return model
 
 
@@ -250,10 +250,10 @@ def test_inline_prompt_cache_cleans_tempfiles_and_preserves_cache_on_failure():
     assert model._get_prompt(b"first") == (b"first",)
     assert model._get_prompt(b"first") == (b"first",)
     assert len(paths) == 1
-    original_key = model._prompt_cache_key
+    original_key = model.prompt_cache_key
     with pytest.raises(ValueError, match="invalid audio"):
         model._get_prompt(b"invalid")
-    assert model._prompt_cache_key == original_key
+    assert model.prompt_cache_key == original_key
     assert model.token2wav.cache == (b"first",)
     assert model._get_prompt(b"second") == (b"second",)
     assert all(not path.exists() for path in paths)
@@ -263,7 +263,7 @@ def test_forward_restores_default_after_custom_reference(tmp_path, monkeypatch):
     model = _model(lambda path: (Path(path).read_bytes(),))
     default = tmp_path / "default.wav"
     default.write_bytes(b"default")
-    model._prompt_wav = str(default)
+    model.default_prompt_wav = str(default)
     references = []
 
     def vocode(tokens, reference):

@@ -58,13 +58,12 @@ class Attention(torch.nn.Module):
         qk_norm: bool = False,
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
-        norm_layer: nn.Module = nn.LayerNorm,
+        norm_layer: Callable[[int], nn.Module] = nn.LayerNorm,
     ) -> None:
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.inner_dim = num_heads * head_dim
-        self.scale = head_dim ** (-0.5)
         self.to_q = nn.Linear(dim, self.inner_dim, bias=qkv_bias)
         self.to_k = nn.Linear(dim, self.inner_dim, bias=qkv_bias)
         self.to_v = nn.Linear(dim, self.inner_dim, bias=qkv_bias)

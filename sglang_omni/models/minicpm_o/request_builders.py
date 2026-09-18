@@ -62,27 +62,6 @@ def build_encoder_request(
     )
 
 
-def apply_encoder_result(
-    state: MiniCPMOPipelineState,
-    *,
-    stage_name: str,
-    result: Any,
-) -> None:
-    encoder_out = result if isinstance(result, dict) else {"result": result}
-    state.encoder_outs[stage_name] = encoder_out
-
-
-def _bounds_to_positions(
-    bounds: torch.Tensor | None, device: torch.device | None = None
-) -> torch.Tensor | None:
-    """Flatten ``(N, 2)`` [start, end) bound rows into a 1D position tensor."""
-    if not isinstance(bounds, torch.Tensor) or bounds.numel() == 0:
-        return None
-    return torch.cat(
-        [torch.arange(int(r[0]), int(r[1]), device=device) for r in bounds]
-    )
-
-
 def _apply_mm_pad_values(
     input_ids: torch.Tensor,
     *,
@@ -105,9 +84,12 @@ def _apply_mm_pad_values(
         info = mm_inputs.get(modality)
         if not isinstance(info, dict):
             continue
-        positions = _bounds_to_positions(info.get("bounds"))
-        if positions is None:
+        bounds = info.get("bounds")
+        if bounds is None or bounds.numel() == 0:
             continue
+        positions = torch.cat(
+            [torch.arange(int(start), int(end)) for start, end in bounds]
+        )
         has_any = True
         cache_key = str(info.get("cache_key") or modality)
         h = xxhash.xxh3_64(cache_key.encode()).intdigest()
@@ -259,37 +241,23 @@ def make_thinker_scheduler_adapters(
     return request_builder, result_adapter
 
 
-def make_thinker_stream_output_builder() -> (
-    Callable[[str, SGLangARRequestData, RequestOutput], list[OutgoingMessage]]
-):
-    def _build_stream_output(
-        request_id: str, req_data: SGLangARRequestData, req_output: RequestOutput
-    ) -> list[OutgoingMessage]:
-        req = getattr(req_data, "req", None)
-        if req is not None and req.inflight_middle_chunks > 0:
-            # note (MayDomine): intermediate prefill chunks have no generated token.
-            return []
-        if req_output.data is None:
-            return []
+def build_thinker_stream_output(
+    request_id: str, req_data: SGLangARRequestData, req_output: RequestOutput
+) -> list[OutgoingMessage]:
+    """Emit one token for streaming requests after a complete prefill or decode."""
+    if req_data.req.inflight_middle_chunks > 0 or req_output.data is None:
+        return []
+    if not req_data.stage_payload.request.params.get("stream", False):
+        return []
 
-        stage_payload = req_data.stage_payload
-        is_streaming = bool(
-            stage_payload is not None
-            and (stage_payload.request.params or {}).get("stream", False)
+    token_id = int(req_output.data)
+    # note (MayDomine): stream transport accepts tensors, not scalar ids.
+    return [
+        OutgoingMessage(
+            request_id=request_id,
+            type="stream",
+            data=torch.tensor([token_id], dtype=torch.long),
+            target=DECODE_STAGE,
+            metadata={"token_id": token_id},
         )
-        if not is_streaming:
-            return []
-
-        token_id = int(req_output.data)
-        # note (MayDomine): stream transport accepts tensors, not scalar ids.
-        return [
-            OutgoingMessage(
-                request_id=request_id,
-                type="stream",
-                data=torch.tensor([token_id], dtype=torch.long),
-                target=DECODE_STAGE,
-                metadata={"token_id": token_id},
-            )
-        ]
-
-    return _build_stream_output
+    ]

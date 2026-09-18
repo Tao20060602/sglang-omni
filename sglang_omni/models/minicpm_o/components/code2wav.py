@@ -42,7 +42,7 @@ class MiniCPMOCode2Wav(nn.Module):
         dev = torch.device(device)
         if dev.type != "cuda":
             raise ValueError(f"Token2wav requires a CUDA device, got {device}")
-        self._device_ctx = torch.cuda.device(dev.index or 0)
+        self.device_context = torch.cuda.device(dev.index or 0)
 
         model_dir = str(resolve_model_path(model_path))
         asset_dir = os.path.join(model_dir, "assets", "token2wav")
@@ -51,7 +51,7 @@ class MiniCPMOCode2Wav(nn.Module):
                 f"token2wav assets not found at {asset_dir}; copy the "
                 "checkpoint's assets/token2wav directory next to the weights"
             )
-        with self._device_ctx:
+        with self.device_context:
             self.token2wav = Token2Wav(
                 Path(asset_dir), device=dev, float16=float16, n_timesteps=n_timesteps
             )
@@ -59,8 +59,8 @@ class MiniCPMOCode2Wav(nn.Module):
         if prompt_wav is None:
             default_wav = os.path.join(model_dir, "assets", "HT_ref_audio.wav")
             prompt_wav = default_wav if os.path.isfile(default_wav) else None
-        self._prompt_wav = prompt_wav
-        self._prompt_cache_key: str | None = None
+        self.default_prompt_wav = prompt_wav
+        self.prompt_cache_key: str | None = None
 
     @torch.inference_mode()
     def forward(
@@ -77,8 +77,8 @@ class MiniCPMOCode2Wav(nn.Module):
                 "waveform": np.zeros(0, dtype=np.float32),
                 "sample_rate": OUTPUT_SAMPLE_RATE,
             }
-        with self._device_ctx:
-            reference = self._prompt_wav if prompt_wav is None else prompt_wav
+        with self.device_context:
+            reference = self.default_prompt_wav if prompt_wav is None else prompt_wav
             waveform = self._vocode(tokens, reference)
         return {"waveform": waveform, "sample_rate": OUTPUT_SAMPLE_RATE}
 
@@ -94,7 +94,7 @@ class MiniCPMOCode2Wav(nn.Module):
         if (
             t2w.cache is None
             or prompt_key is None
-            or prompt_key != self._prompt_cache_key
+            or prompt_key != self.prompt_cache_key
         ):
             if isinstance(prompt_wav, bytes):
                 with tempfile.NamedTemporaryFile(suffix=".wav") as reference:
@@ -104,7 +104,7 @@ class MiniCPMOCode2Wav(nn.Module):
             else:
                 prompt = t2w.prepare_prompt(prompt_wav)
             t2w.cache = prompt
-            self._prompt_cache_key = prompt_key
+            self.prompt_cache_key = prompt_key
         return t2w.cache
 
     def _vocode(self, tokens: list[int], prompt_wav: str | bytes | None) -> np.ndarray:

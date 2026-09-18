@@ -11,14 +11,20 @@ from PIL import Image
 from transformers import AutoProcessor, AutoTokenizer
 
 from sglang_omni.models.minicpm_o.payload_types import MiniCPMOPipelineState
+from sglang_omni.models.minicpm_o.routing import should_generate_audio_output
 from sglang_omni.models.weight_loader import resolve_model_path
 from sglang_omni.preprocessing.audio import (
+    AudioMediaIO,
     compute_audio_cache_key,
     ensure_audio_list_async,
 )
 from sglang_omni.preprocessing.image import (
     compute_image_cache_key,
     ensure_image_list_async,
+)
+from sglang_omni.preprocessing.video import (
+    compute_video_cache_key,
+    ensure_video_list_async,
 )
 from sglang_omni.proto import StagePayload
 
@@ -74,20 +80,6 @@ def _video_to_images(video: Any) -> list[Image.Image]:
     return [Image.fromarray(frame.numpy()).convert("RGB") for frame in frames]
 
 
-def compute_video_cache_key(*args: Any, **kwargs: Any) -> str | None:
-    from sglang_omni.preprocessing.video import compute_video_cache_key as _compute
-
-    return _compute(*args, **kwargs)
-
-
-async def ensure_video_list_async(
-    *args: Any, **kwargs: Any
-) -> tuple[list[Any], Any, Any]:
-    from sglang_omni.preprocessing.video import ensure_video_list_async as _ensure
-
-    return await _ensure(*args, **kwargs)
-
-
 class MiniCPMOPreprocessor:
     def __init__(
         self,
@@ -100,16 +92,14 @@ class MiniCPMOPreprocessor:
             local_dir, trust_remote_code=True
         )
         # note (MayDomine): text-only requests do not need Whisper feature extraction.
-        self._local_dir = local_dir
+        self.model_dir = local_dir
         self._processor = None
-        self._speech_enabled = speech_enabled
+        self.speech_enabled = speech_enabled
 
     def _speech_to_text_inputs(
         self, payload: StagePayload, inputs: dict[str, Any]
     ) -> tuple[list[dict[str, Any]], list[Any]]:
         """Turn a transcription upload into a chat turn plus audio list."""
-        from sglang_omni.preprocessing.audio import AudioMediaIO
-
         params = payload.request.params or {}
         language = str(params.get("language") or "").lower()
         prompt = ASR_PROMPT_ZH if language.startswith("zh") else ASR_PROMPT_EN
@@ -117,15 +107,13 @@ class MiniCPMOPreprocessor:
         return [{"role": "user", "content": prompt}], [audio]
 
     def _use_tts_template(self, payload: StagePayload) -> bool:
-        from sglang_omni.models.minicpm_o.routing import should_generate_audio_output
-
-        return self._speech_enabled and should_generate_audio_output(payload)
+        return self.speech_enabled and should_generate_audio_output(payload)
 
     @property
     def processor(self) -> ProcessorMixin:
         if self._processor is None:
             self._processor = AutoProcessor.from_pretrained(
-                self._local_dir, trust_remote_code=True
+                self.model_dir, trust_remote_code=True
             )
         return self._processor
 

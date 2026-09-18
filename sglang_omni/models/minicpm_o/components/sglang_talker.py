@@ -16,7 +16,7 @@ from torch import nn
 from transformers import LlamaConfig, PretrainedConfig
 
 
-class _MiniCPMTTSProjector(nn.Module):
+class MiniCPMTTSProjector(nn.Module):
     """Checkpoint-compatible thinker-hidden → talker-hidden projector."""
 
     def __init__(self, input_size: int, hidden_size: int) -> None:
@@ -77,7 +77,7 @@ class MiniCPMOTalkerForCausalLM(nn.Module):
             prefix=f"{prefix}.llama" if prefix else "llama",
         )
         self.emb_text = nn.Embedding(int(cfg["num_text_tokens"]), hidden_size)
-        self.projector_semantic = _MiniCPMTTSProjector(int(cfg["llm_dim"]), hidden_size)
+        self.projector_semantic = MiniCPMTTSProjector(int(cfg["llm_dim"]), hidden_size)
         self.emb_code = nn.Embedding(self.num_audio_tokens, hidden_size)
         self.head_code = nn.Linear(hidden_size, self.num_audio_tokens, bias=False)
 

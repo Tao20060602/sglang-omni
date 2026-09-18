@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -67,13 +68,12 @@ def build_talker_request(
     return {"tts_token_ids": tokens, "tts_hidden": hidden}
 
 
-class _MiniCPMOTalkerNullTokenizer:
+@dataclass(kw_only=True)
+class CodecTokenizer:
     """Supply the codec EOS id required by SGLang's minimum-length penalizer."""
 
+    eos_token_id: int
     additional_stop_token_ids: set[int] | None = None
-
-    def __init__(self, codec_eos_id: int) -> None:
-        self.eos_token_id = int(codec_eos_id)
 
 
 def build_sglang_talker_request(
@@ -118,7 +118,7 @@ def build_sglang_talker_request(
             sampling_seed=resolve_sampling_seed(params),
         )
         rep_penalty = float(params.get("talker_repetition_penalty", 1.05))
-    shim = _MiniCPMOTalkerNullTokenizer(codec_eos_id)
+    shim = CodecTokenizer(eos_token_id=int(codec_eos_id))
     sampling_params.normalize(shim)
     sampling_params.verify(codec_vocab_size)
 

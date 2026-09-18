@@ -103,25 +103,16 @@ def load_tokenizer_weights(onnx_path: Path) -> dict[str, torch.Tensor]:
                     ln_inputs = node.input
                     scale_name = ln_inputs[1]
                     bias_name = ln_inputs[2]
-                    scale = (
-                        onnx.numpy_helper.to_array(initializer_map[scale_name]).copy()
-                        if scale_name in initializer_map
-                        else None
-                    )
-                    bias = (
-                        onnx.numpy_helper.to_array(initializer_map[bias_name]).copy()
-                        if bias_name in initializer_map
-                        else None
-                    )
-                    scale.flags.writeable = True
-                    bias.flags.writeable = True
+                    scale = onnx.numpy_helper.to_array(
+                        initializer_map[scale_name]
+                    ).copy()
+                    bias = onnx.numpy_helper.to_array(initializer_map[bias_name]).copy()
                     weight_tensor = torch.from_numpy(scale)
                     bias_tensor = torch.from_numpy(bias)
                     weights_dict[ln_bias_name] = bias_tensor
                     weights_dict[ln_weight_name] = weight_tensor
                 else:
                     weight_array = onnx.numpy_helper.to_array(initializer).copy()
-                    weight_array.flags.writeable = True
                     weight_tensor = torch.from_numpy(weight_array)
                     if len(weight_tensor.shape) > 2 or weight_name in [
                         "encoder.positional_embedding"

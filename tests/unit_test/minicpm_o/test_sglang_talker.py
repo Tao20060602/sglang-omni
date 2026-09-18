@@ -10,7 +10,7 @@ from torch import nn
 
 from sglang_omni.models.minicpm_o.components.sglang_talker import (
     MiniCPMOTalkerForCausalLM,
-    _MiniCPMTTSProjector,
+    MiniCPMTTSProjector,
 )
 
 HIDDEN = 8
@@ -39,7 +39,7 @@ def _bare_model() -> MiniCPMOTalkerForCausalLM:
     model.normalize_projected_hidden = True
     model.llama = _RecordingBackbone()
     model.emb_text = nn.Embedding(NUM_TEXT, HIDDEN)
-    model.projector_semantic = _MiniCPMTTSProjector(LLM_DIM, HIDDEN)
+    model.projector_semantic = MiniCPMTTSProjector(LLM_DIM, HIDDEN)
     model.emb_code = nn.Embedding(NUM_AUDIO, HIDDEN)
     model.head_code = nn.Linear(HIDDEN, NUM_AUDIO, bias=False)
     return model

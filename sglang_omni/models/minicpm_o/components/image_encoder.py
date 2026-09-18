@@ -120,8 +120,8 @@ class MiniCPMOImageEncoder(nn.Module):
         torch_dtype = resolve_dtype(dtype)
         model_dir = str(resolve_model_path(model_path))
         config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        self._device = torch.device(device)
-        self._dtype = torch_dtype
+        self.device = torch.device(device)
+        self.dtype = torch_dtype
 
         _init_sglang_tp()
         from sglang.srt.models.idefics2 import Idefics2VisionTransformer
@@ -147,7 +147,7 @@ class MiniCPMOImageEncoder(nn.Module):
         self.resampler = resampler
 
         self.eval()
-        self.to(device=self._device, dtype=torch_dtype)
+        self.to(device=self.device, dtype=torch_dtype)
         # note (MayDomine): rebuild the positional cache in fp32 after the bf16 cast.
         self.resampler._set_2d_pos_cache(self.resampler.max_size, device=device)
 
@@ -202,10 +202,10 @@ class MiniCPMOImageEncoder(nn.Module):
         if not pixel_values or tgt_sizes is None:
             return {}
         tgt_sizes_cpu = tgt_sizes.to("cpu", dtype=torch.int32)
-        tgt_sizes = tgt_sizes_cpu.to(self._device)
+        tgt_sizes = tgt_sizes_cpu.to(self.device)
 
         all_pixel_values = [
-            v.to(self._device, dtype=self._dtype).flatten(end_dim=1).permute(1, 0)
+            v.to(self.device, dtype=self.dtype).flatten(end_dim=1).permute(1, 0)
             for v in pixel_values
         ]
         all_pixel_values = pad_sequence(
@@ -219,9 +219,9 @@ class MiniCPMOImageEncoder(nn.Module):
         # note (MayDomine): host-side patch counts avoid device synchronization.
         patch_counts_cpu = tgt_sizes_cpu[:, 0] * tgt_sizes_cpu[:, 1]
         max_patches = int(patch_counts_cpu.max())
-        patch_range = torch.arange(max_patches, device=self._device)
+        patch_range = torch.arange(max_patches, device=self.device)
         patch_attn_mask = (
-            patch_range[None, :] < patch_counts_cpu.to(self._device)[:, None]
+            patch_range[None, :] < patch_counts_cpu.to(self.device)[:, None]
         ).unsqueeze(1)
 
         chunk = self.vision_batch_size

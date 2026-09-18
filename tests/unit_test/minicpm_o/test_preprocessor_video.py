@@ -90,7 +90,7 @@ def test_minicpm_preprocessor_consumes_video_frames_and_audio(
     fake_processor = _FakeProcessor()
     preprocessor = object.__new__(MiniCPMOPreprocessor)
     preprocessor._processor = fake_processor
-    preprocessor._speech_enabled = False
+    preprocessor.speech_enabled = False
     preprocessor.tokenizer = SimpleNamespace()
     monkeypatch.setattr(
         preprocessor,
@@ -156,7 +156,7 @@ def test_minicpm_preprocessor_does_not_load_video_for_audio_only(
 ) -> None:
     preprocessor = object.__new__(MiniCPMOPreprocessor)
     preprocessor._processor = _FakeProcessor()
-    preprocessor._speech_enabled = False
+    preprocessor.speech_enabled = False
     preprocessor.tokenizer = SimpleNamespace()
     monkeypatch.setattr(
         preprocessor,

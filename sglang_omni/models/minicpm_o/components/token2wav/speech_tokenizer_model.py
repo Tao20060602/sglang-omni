@@ -62,18 +62,6 @@ class Conv1d(nn.Conv1d):
         )
 
 
-class MultiHeadAttention(nn.Module):
-
-    def __init__(self, n_state: int, n_head: int, use_sdpa: bool = False) -> None:
-        super().__init__()
-        self.n_head = n_head
-        self.query = Linear(n_state, n_state)
-        self.key = Linear(n_state, n_state, bias=False)
-        self.value = Linear(n_state, n_state)
-        self.out = Linear(n_state, n_state)
-        self.use_sdpa = use_sdpa
-
-
 @dataclass(kw_only=True)
 class ModelConfig:
     n_mels: int = 128
@@ -116,14 +104,9 @@ class FSQCodebook(torch.nn.Module):
         self.level = level
 
     @torch.inference_mode()
-    def preprocess(self, x: torch.Tensor) -> torch.Tensor:
-        x = rearrange(x, "... d -> (...) d")
-        return x
-
-    @torch.inference_mode()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         x_shape = x.shape
-        x = self.preprocess(x)
+        x = rearrange(x, "... d -> (...) d")
         h = self.project_down(x).float()
         L = int(self.level)
         eps = 1e-06
@@ -150,12 +133,17 @@ class FSQVectorQuantization(torch.nn.Module):
         return self._codebook.encode(x)
 
 
-class FSMNMultiHeadAttention(MultiHeadAttention):
+class FSMNMultiHeadAttention(nn.Module):
 
     def __init__(
         self, n_state: int, n_head: int, kernel_size: int = 31, use_sdpa: bool = False
     ) -> None:
-        super().__init__(n_state, n_head)
+        super().__init__()
+        self.n_head = n_head
+        self.query = Linear(n_state, n_state)
+        self.key = Linear(n_state, n_state, bias=False)
+        self.value = Linear(n_state, n_state)
+        self.out = Linear(n_state, n_state)
         self.fsmn_block = torch.nn.Conv1d(
             n_state,
             n_state,

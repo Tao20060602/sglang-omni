@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Parity test for the vectorized talker repetition penalty.
 
-Compares ``MiniCPMOTalkerModelRunner._apply_repetition_penalty`` against a
+Compares ``MiniCPMOTalkerModelRunner._process_sampling_logits`` against a
 per-request reference of the checkpoint's
 ``CustomRepetitionPenaltyLogitsProcessorRepeat`` semantics: count each token
 in the last ``REP_PENALTY_WINDOW`` generated codes, then scale the logit by
@@ -74,7 +74,7 @@ def test_vectorized_penalty_matches_reference() -> None:
 
     logits_output = SimpleNamespace(next_token_logits=logits.clone())
     runner = MiniCPMOTalkerModelRunner.__new__(MiniCPMOTalkerModelRunner)
-    runner._apply_repetition_penalty(logits_output, requests)
+    runner._process_sampling_logits(logits_output, requests)
 
     torch.testing.assert_close(logits_output.next_token_logits, expected)
 
@@ -91,7 +91,7 @@ def test_penalty_noop_rows_bitwise_unchanged() -> None:
 
     logits_output = SimpleNamespace(next_token_logits=logits)
     runner = MiniCPMOTalkerModelRunner.__new__(MiniCPMOTalkerModelRunner)
-    runner._apply_repetition_penalty(logits_output, requests)
+    runner._process_sampling_logits(logits_output, requests)
 
     # The untouched row must be bitwise identical (never round-tripped).
     assert torch.equal(logits_output.next_token_logits[1], original[1])

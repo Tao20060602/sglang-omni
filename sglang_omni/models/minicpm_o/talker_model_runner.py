@@ -75,7 +75,7 @@ class MiniCPMOTalkerModelRunner(ModelRunner):
             ),
         )
 
-    def _apply_repetition_penalty(
+    def _process_sampling_logits(
         self, logits_output: LogitsProcessorOutput, requests: list[SchedulerRequest]
     ) -> None:
         logits = logits_output.next_token_logits
@@ -124,8 +124,3 @@ class MiniCPMOTalkerModelRunner(ModelRunner):
         penalized = torch.where(scores < 0, scores * alphas, scores / alphas)
         scores = torch.where(counts > 0, penalized, scores)
         logits[rows_t] = scores.to(orig_dtype)
-
-    def _process_sampling_logits(
-        self, logits_output: LogitsProcessorOutput, requests: list[SchedulerRequest]
-    ) -> None:
-        self._apply_repetition_penalty(logits_output, requests)

@@ -160,8 +160,8 @@ def test_init_sglang_tp_propagates_unexpected_context_failure(tp_context, monkey
 def test_padding_does_not_change_image_embeddings(batch_size: int) -> None:
     encoder = object.__new__(MiniCPMOImageEncoder)
     torch.nn.Module.__init__(encoder)
-    encoder._device = torch.device("cpu")
-    encoder._dtype = torch.float32
+    encoder.device = torch.device("cpu")
+    encoder.dtype = torch.float32
     encoder.vision_batch_size = batch_size
 
     def run_vpm(pixel_values, patch_attn_mask, tgt_sizes, patch_counts_cpu):
@@ -207,8 +207,8 @@ def test_vision_config_object_converts_shim_dict() -> None:
 def test_chunked_resampler_uses_each_chunk_padding_width() -> None:
     encoder = object.__new__(MiniCPMOImageEncoder)
     torch.nn.Module.__init__(encoder)
-    encoder._device = torch.device("cpu")
-    encoder._dtype = torch.float32
+    encoder.device = torch.device("cpu")
+    encoder.dtype = torch.float32
     encoder.vision_batch_size = 16
     calls = []
 

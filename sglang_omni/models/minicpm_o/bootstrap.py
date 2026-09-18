@@ -120,8 +120,8 @@ def create_thinker_scheduler(
     from sglang.srt.utils.hf_transformers_utils import get_tokenizer
 
     from sglang_omni.models.minicpm_o.request_builders import (
+        build_thinker_stream_output,
         make_thinker_scheduler_adapters,
-        make_thinker_stream_output_builder,
     )
     from sglang_omni.models.minicpm_o.routing import should_generate_audio_output
     from sglang_omni.models.minicpm_o.thinker_model_runner import (
@@ -206,7 +206,7 @@ def create_thinker_scheduler(
         model_runner=model_runner,
         request_builder=request_builder,
         result_adapter=result_adapter,
-        stream_output_builder=make_thinker_stream_output_builder(),
+        stream_output_builder=build_thinker_stream_output,
         abort_callback=model_runner.reset_request,
         enable_async_decode=enable_async_decode,
         async_decode_min_batch_size=async_decode_min_batch_size,

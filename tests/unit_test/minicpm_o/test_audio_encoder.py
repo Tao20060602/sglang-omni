@@ -170,8 +170,8 @@ def _tiny_audio_encoder(pool_step: int = 2) -> MiniCPMOAudioEncoder:
     config = _small_whisper_config()
     encoder = object.__new__(MiniCPMOAudioEncoder)
     torch.nn.Module.__init__(encoder)
-    encoder._device = torch.device("cpu")
-    encoder._dtype = torch.float32
+    encoder.device = torch.device("cpu")
+    encoder.dtype = torch.float32
     encoder.apm = MiniCPMWhisperEncoder(config)
     encoder.audio_projection_layer = MultiModalProjector(
         in_dim=config.d_model, out_dim=16
@@ -179,7 +179,7 @@ def _tiny_audio_encoder(pool_step: int = 2) -> MiniCPMOAudioEncoder:
     encoder.audio_pool_step = pool_step
     encoder.audio_avg_pooler = torch.nn.AvgPool1d(pool_step, stride=pool_step)
     encoder.chunk_num_frame = 50
-    encoder._chunk_mask_cache = None
+    encoder.chunk_mask_cache = None
     return encoder
 
 
@@ -241,7 +241,7 @@ def test_short_audio_is_rejected_before_pooling(pool_step: int) -> None:
     """
     encoder = _tiny_audio_encoder(pool_step=pool_step)
     too_short = _min_mel_frames(pool_step) - 1
-    mel = torch.randn(1, 80, too_short).to(encoder._dtype)
+    mel = torch.randn(1, 80, too_short).to(encoder.dtype)
     lens = torch.tensor([too_short])
 
     with pytest.raises(ValueError, match="accepts audio up to"):
@@ -254,7 +254,7 @@ def test_minimum_length_audio_still_encodes(pool_step: int) -> None:
     """The shortest accepted clip yields exactly one pooled frame."""
     encoder = _tiny_audio_encoder(pool_step=pool_step)
     shortest = _min_mel_frames(pool_step)
-    mel = torch.randn(1, 80, shortest).to(encoder._dtype)
+    mel = torch.randn(1, 80, shortest).to(encoder.dtype)
     lens = torch.tensor([shortest])
 
     with torch.no_grad():

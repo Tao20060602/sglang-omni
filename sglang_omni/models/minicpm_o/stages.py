@@ -51,10 +51,7 @@ def _run_single_encoder_payload(
     import torch
 
     from sglang_omni.models.minicpm_o.payload_types import MiniCPMOPipelineState
-    from sglang_omni.models.minicpm_o.request_builders import (
-        apply_encoder_result,
-        build_encoder_request,
-    )
+    from sglang_omni.models.minicpm_o.request_builders import build_encoder_request
 
     state = MiniCPMOPipelineState.from_dict(payload.data)
     request = build_encoder_request(state, stage_name=stage_name)
@@ -69,7 +66,7 @@ def _run_single_encoder_payload(
                 result = model(**request.model_inputs)
             if cache is not None and request.cache_key is not None:
                 cache.put(request.cache_key, result)
-    apply_encoder_result(state, stage_name=stage_name, result=result)
+    state.encoder_outs[stage_name] = result
     payload.data = state.to_dict()
     return payload
 
@@ -172,12 +169,17 @@ def create_sglang_talker_executor_from_config(
     )
 
     logger.info(
-        f"sglang_ar_startup stage=talker gpu_id={gpu_id} tp_rank={tp_rank}/{tp_size} "
-        f"context_length={max_seq_len} "
-        f"total_gpu_memory_fraction={total_gpu_memory_fraction} "
-        f"mem_fraction_static={resolved_view(server_args).mem_fraction_static} "
-        f"pre_load_avail_mem={avail_gpu_mem(gpu_id)} "
-        f"pid={os.getpid()}"
+        "sglang_ar_startup stage=talker gpu_id=%s tp_rank=%s/%s "
+        "context_length=%s total_gpu_memory_fraction=%s mem_fraction_static=%s "
+        "pre_load_avail_mem=%s pid=%s",
+        gpu_id,
+        tp_rank,
+        tp_size,
+        max_seq_len,
+        total_gpu_memory_fraction,
+        resolved_view(server_args).mem_fraction_static,
+        avail_gpu_mem(gpu_id),
+        os.getpid(),
     )
     scheduler = create_talker_scheduler(
         server_args,
@@ -187,8 +189,10 @@ def create_sglang_talker_executor_from_config(
         total_gpu_memory_fraction=total_gpu_memory_fraction,
     )
     logger.info(
-        f"sglang_ar_started stage=talker gpu_id={gpu_id} "
-        f"post_load_avail_mem={avail_gpu_mem(gpu_id)} pid={os.getpid()}"
+        "sglang_ar_started stage=talker gpu_id=%s post_load_avail_mem=%s pid=%s",
+        gpu_id,
+        avail_gpu_mem(gpu_id),
+        os.getpid(),
     )
     return scheduler
 
@@ -291,12 +295,17 @@ def create_sglang_thinker_executor_from_config(
     )
 
     logger.info(
-        f"sglang_ar_startup stage=thinker gpu_id={gpu_id} tp_rank={tp_rank}/{tp_size} "
-        f"context_length={max_seq_len} "
-        f"total_gpu_memory_fraction={total_gpu_memory_fraction} "
-        f"mem_fraction_static={resolved_view(server_args).mem_fraction_static} "
-        f"pre_load_avail_mem={avail_gpu_mem(gpu_id)} "
-        f"pid={os.getpid()}"
+        "sglang_ar_startup stage=thinker gpu_id=%s tp_rank=%s/%s "
+        "context_length=%s total_gpu_memory_fraction=%s mem_fraction_static=%s "
+        "pre_load_avail_mem=%s pid=%s",
+        gpu_id,
+        tp_rank,
+        tp_size,
+        max_seq_len,
+        total_gpu_memory_fraction,
+        resolved_view(server_args).mem_fraction_static,
+        avail_gpu_mem(gpu_id),
+        os.getpid(),
     )
     scheduler = create_thinker_scheduler(
         server_args,
@@ -309,7 +318,9 @@ def create_sglang_thinker_executor_from_config(
         speech_enabled=speech_enabled,
     )
     logger.info(
-        f"sglang_ar_started stage=thinker gpu_id={gpu_id} "
-        f"post_load_avail_mem={avail_gpu_mem(gpu_id)} pid={os.getpid()}"
+        "sglang_ar_started stage=thinker gpu_id=%s post_load_avail_mem=%s pid=%s",
+        gpu_id,
+        avail_gpu_mem(gpu_id),
+        os.getpid(),
     )
     return scheduler

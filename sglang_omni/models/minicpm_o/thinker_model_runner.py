@@ -10,6 +10,7 @@ from sglang_omni.model_runner.thinker_model_runner import ThinkerModelRunner
 
 if TYPE_CHECKING:
     import torch
+    from sglang.srt.managers.schedule_batch import ScheduleBatch
     from sglang.srt.model_executor.forward_batch_info import CaptureHiddenMode
 
     from sglang_omni.model_runner.model_worker import ModelWorker
@@ -56,16 +57,16 @@ class MiniCPMOThinkerModelRunner(ThinkerModelRunner):
             else get_server_return_hidden_states_mode()
         )
 
-        self._pending_hidden: dict[str, list[torch.Tensor]] = {}
+        self.pending_hidden: dict[str, list[torch.Tensor]] = {}
 
     def requested_capture_hidden_mode_prefill(
-        self, schedule_batch: Any, requests: list[SchedulerRequest]
+        self, schedule_batch: ScheduleBatch, requests: list[SchedulerRequest]
     ) -> CaptureHiddenMode:
         """Use deployment-wide capture; batch arguments follow the runner interface."""
         return self._capture_hidden_mode
 
     def requested_capture_hidden_mode_decode(
-        self, schedule_batch: Any, requests: list[SchedulerRequest]
+        self, schedule_batch: ScheduleBatch, requests: list[SchedulerRequest]
     ) -> CaptureHiddenMode:
         """Use deployment-wide capture; batch arguments follow the runner interface."""
         return self._capture_hidden_mode
@@ -79,17 +80,15 @@ class MiniCPMOThinkerModelRunner(ThinkerModelRunner):
         """Collect request outputs; the raw result is part of the runner interface."""
         for sched_req in scheduler_output.requests:
             req_output = outputs.get(sched_req.request_id)
-            extra = getattr(req_output, "extra", None)
-            if not isinstance(extra, dict):
+            if req_output is None or req_output.extra is None:
                 continue
-            hidden = extra.pop("hidden_states", None)
+            hidden = req_output.extra.pop("hidden_states", None)
             if hidden is None:
                 continue
-            req = getattr(getattr(sched_req, "data", None), "req", None)
-            if req is not None and getattr(req, "inflight_middle_chunks", 0) > 0:
+            if sched_req.data.req.inflight_middle_chunks > 0:
                 continue
             hidden = hidden.reshape(-1, hidden.shape[-1])[-1]
-            seq = self._pending_hidden.setdefault(sched_req.request_id, [])
+            seq = self.pending_hidden.setdefault(sched_req.request_id, [])
             # note (MayDomine): CUDA graph replay overwrites the original hidden buffer.
             seq.append(hidden.detach().clone())
 
@@ -98,12 +97,7 @@ class MiniCPMOThinkerModelRunner(ThinkerModelRunner):
         return {
             sched_req.request_id
             for sched_req in scheduler_output.requests
-            if getattr(
-                getattr(getattr(sched_req, "data", None), "req", None),
-                "inflight_middle_chunks",
-                0,
-            )
-            > 0
+            if sched_req.data.req.inflight_middle_chunks > 0
         }
 
     def on_request_finished(
@@ -112,7 +106,7 @@ class MiniCPMOThinkerModelRunner(ThinkerModelRunner):
         """Flush the request's hidden accumulator with a single D2H copy."""
         import torch
 
-        seq = self._pending_hidden.pop(request_id, None)
+        seq = self.pending_hidden.pop(request_id, None)
         if not seq:
             return
         stacked = torch.stack(seq).to("cpu")
@@ -120,4 +114,4 @@ class MiniCPMOThinkerModelRunner(ThinkerModelRunner):
 
     def reset_request(self, request_id: str) -> None:
         """Drop accumulated hidden states on abort (no terminal flush runs)."""
-        self._pending_hidden.pop(request_id, None)
+        self.pending_hidden.pop(request_id, None)

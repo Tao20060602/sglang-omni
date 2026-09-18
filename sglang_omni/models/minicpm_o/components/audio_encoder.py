@@ -210,8 +210,8 @@ class MiniCPMOAudioEncoder(nn.Module):
         torch_dtype = resolve_dtype(dtype)
         model_dir = str(resolve_model_path(model_path))
         config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        self._device = torch.device(device)
-        self._dtype = torch_dtype
+        self.device = torch.device(device)
+        self.dtype = torch_dtype
 
         audio_config = _audio_config_object(config)
         self.apm = MiniCPMWhisperEncoder(audio_config)
@@ -228,7 +228,7 @@ class MiniCPMOAudioEncoder(nn.Module):
         self.audio_projection_layer = projector
 
         self.eval()
-        self.to(device=self._device, dtype=torch_dtype)
+        self.to(device=self.device, dtype=torch_dtype)
 
         self.audio_pool_step = int(config.audio_pool_step)
         self.audio_avg_pooler = nn.AvgPool1d(
@@ -236,15 +236,15 @@ class MiniCPMOAudioEncoder(nn.Module):
         )
         # note (MayDomine): stride-2 convolution yields 50 frames per second.
         self.chunk_num_frame = int(float(config.audio_chunk_length) * 50)
-        self._chunk_mask_cache: tuple[int, torch.Tensor] | None = None
+        self.chunk_mask_cache: tuple[int, torch.Tensor] | None = None
 
     def _cached_chunk_mask(self, size: int) -> torch.Tensor:
-        if self._chunk_mask_cache is None or self._chunk_mask_cache[0] != size:
-            self._chunk_mask_cache = (
+        if self.chunk_mask_cache is None or self.chunk_mask_cache[0] != size:
+            self.chunk_mask_cache = (
                 size,
-                _chunked_causal_mask(size, self.chunk_num_frame, self._device),
+                _chunked_causal_mask(size, self.chunk_num_frame, self.device),
             )
-        return self._chunk_mask_cache[1]
+        return self.chunk_mask_cache[1]
 
     @torch.no_grad()
     def forward(
@@ -261,9 +261,9 @@ class MiniCPMOAudioEncoder(nn.Module):
             or audio_feature_lens is None
         ):
             return {}
-        wavforms = audio_features.to(self._device, dtype=self._dtype)
+        wavforms = audio_features.to(self.device, dtype=self.dtype)
         lens_cpu = audio_feature_lens.to("cpu")
-        lens = audio_feature_lens.to(self._device)
+        lens = audio_feature_lens.to(self.device)
 
         # note (MayDomine): fewer than one pooling window yields an empty output.
         min_mel_frames = _min_mel_frames(self.audio_pool_step)
@@ -279,17 +279,17 @@ class MiniCPMOAudioEncoder(nn.Module):
         max_seq_len = (max_mel_seq_len - 1) // 2 + 1
 
         # note (MayDomine): convolution sees padding before the attention mask does.
-        mel_range = torch.arange(max_mel_seq_len, device=self._device)
+        mel_range = torch.arange(max_mel_seq_len, device=self.device)
         wavforms = wavforms.masked_fill(
             mel_range[None, None, :] >= lens[:, None, None], 0.0
         )
 
         # note (MayDomine): validity lengths must account for convolution stride.
-        seq_range = torch.arange(max_seq_len, device=self._device)
+        seq_range = torch.arange(max_seq_len, device=self.device)
         lens_after_conv = _feature_lens_after_conv(lens)
         valid = seq_range[None, :] < lens_after_conv[:, None]
         allowed = self._cached_chunk_mask(max_seq_len)[None, :, :] & valid[:, None, :]
-        attn_mask = torch.where(allowed, 0.0, MASK_MIN).to(self._dtype)
+        attn_mask = torch.where(allowed, 0.0, MASK_MIN).to(self.dtype)
         attn_mask = attn_mask.unsqueeze(1)
 
         audio_states = self.apm(wavforms, attn_mask)
@@ -301,6 +301,6 @@ class MiniCPMOAudioEncoder(nn.Module):
 
         # note (MayDomine): host-side lengths avoid per-sample device synchronization.
         pooled_lens = _feature_lens_after_pooling(lens_cpu, self.audio_pool_step)
-        pool_range = torch.arange(audio_embeds.shape[1], device=self._device)
-        keep = pool_range[None, :] < pooled_lens.to(self._device)[:, None]
+        pool_range = torch.arange(audio_embeds.shape[1], device=self.device)
+        keep = pool_range[None, :] < pooled_lens.to(self.device)[:, None]
         return {"audio_embeds": audio_embeds[keep]}
