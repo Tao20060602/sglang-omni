@@ -50,13 +50,12 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol, TypeVar
+from typing import BinaryIO, Protocol, TypedDict
 
 import torch
+from typing_extensions import NotRequired, ReadOnly
 
 logger = logging.getLogger(__name__)
-
-IdentityValueT = TypeVar("IdentityValueT")
 
 ENV_WEIGHT_SHARE = "SGLANG_OMNI_WEIGHT_SHARE"
 ENV_WEIGHT_SHARE_TIMEOUT_S = "SGLANG_OMNI_WEIGHT_SHARE_TIMEOUT_S"
@@ -209,7 +208,7 @@ class WeightTensorSerializer(Protocol):
 
     def serialize(self, obj: dict[str, torch.Tensor]) -> bytes: ...
 
-    def deserialize(self, data: bytes) -> dict[str, torch.Tensor]: ...
+    def deserialize(self, data: bytes | bytearray) -> dict[str, torch.Tensor]: ...
 
 
 class _SglangIpcSerializer:
@@ -229,7 +228,7 @@ class _SglangIpcSerializer:
         return MultiprocessingSerializer.serialize(obj)
 
     @staticmethod
-    def deserialize(data: bytes) -> dict[str, torch.Tensor]:
+    def deserialize(data: bytes | bytearray) -> dict[str, torch.Tensor]:
         from sglang.srt.utils.common import MultiprocessingSerializer
         from sglang.srt.utils.patch_torch import monkey_patch_torch_reductions
 
@@ -275,7 +274,7 @@ def _tensor_to_value_bytes(tensor: torch.Tensor) -> bytes:
     return buf.getvalue()
 
 
-def _value_bytes_to_tensor(data: bytes) -> torch.Tensor:
+def _value_bytes_to_tensor(data: bytes | bytearray) -> torch.Tensor:
     return torch.load(io.BytesIO(data), map_location="cpu", weights_only=True)
 
 
@@ -638,7 +637,7 @@ def export_weights(
     }
     value_tensors = {n: t for n, t in tensors.items() if n not in ipc_tensors}
 
-    payload = {
+    payload: WeightSharePayload = {
         "format_version": _FORMAT_VERSION,
         "model_class": type(model).__name__,
         "manifest_hash": _manifest_hash(tensors, private),
@@ -713,6 +712,32 @@ def wait_for_any_export(
         time.sleep(poll_interval_s)
 
 
+class WeightSharePayload(TypedDict):
+    format_version: int
+    model_class: str
+    manifest_hash: str
+    private_names: list[str]
+    pid: int
+    ipc_blob: bytes | bytearray
+    ipc_names: list[str]
+    value_blobs: dict[str, bytes | bytearray]
+    torch_version: NotRequired[str]
+    leader_start_time: NotRequired[str | None]
+    model_path: NotRequired[str | None]
+    model_revision: NotRequired[str | None]
+    gpu_uuid: NotRequired[str | None]
+    run_id: NotRequired[str | None]
+
+
+class WeightShareMetadata(TypedDict):
+    pid: ReadOnly[NotRequired[int]]
+    leader_start_time: ReadOnly[NotRequired[str | None]]
+    model_path: ReadOnly[NotRequired[str | None]]
+    model_revision: ReadOnly[NotRequired[str | None]]
+    gpu_uuid: ReadOnly[NotRequired[str | None]]
+    run_id: ReadOnly[NotRequired[str | None]]
+
+
 # Note (Jiaxin Deng): a closed schema checked before deserialization, so a
 # truncated or forged handle raises a named WeightShareError, not a raw KeyError.
 _REQUIRED_PAYLOAD_FIELDS: dict[str, type | tuple[type, ...]] = {
@@ -777,7 +802,7 @@ def _validate_payload_schema(payload: object, file_path: str) -> None:
 
 def _load_payload(
     file_path: str, model: torch.nn.Module, *, validate_secure: bool = True
-) -> dict[str, Any]:
+) -> WeightSharePayload:
     if validate_secure and _FS_TRUST_ENFORCED:
         # Note (Jiaxin Deng): O_NOFOLLOW + fstat binds the check to the opened
         # inode before unpickling (an RCE surface).
@@ -859,7 +884,7 @@ def _attach_and_check(
     model_revision: str | None,
     run_id: str | None = None,
     private_names: frozenset[str] = frozenset(),
-) -> tuple[dict[str, tuple[int, tuple[int, ...], torch.dtype]], dict[str, Any]]:
+) -> tuple[dict[str, tuple[int, tuple[int, ...], torch.dtype]], WeightSharePayload]:
     serializer = _SglangIpcSerializer if serializer is None else serializer
     wait_for_export(file_path, timeout_s, poll_interval_s)
     payload = _load_payload(file_path, model, validate_secure=validate_secure)
@@ -873,7 +898,7 @@ def _attach_and_check(
 
 
 def _check_model_identity(
-    payload: dict[str, IdentityValueT],
+    payload: WeightShareMetadata,
     model_path: str | None,
     model_revision: str | None,
     file_path: str,
@@ -910,7 +935,7 @@ def _check_model_identity(
         )
 
 
-def _check_leader_alive(payload: dict[str, Any], when: str) -> None:
+def _check_leader_alive(payload: WeightShareMetadata, when: str) -> None:
     leader_pid = payload.get("pid")
     if not leader_pid:
         return
@@ -937,7 +962,7 @@ def _check_leader_alive(payload: dict[str, Any], when: str) -> None:
 
 def _alias_from_payload(
     model: torch.nn.Module,
-    payload: dict[str, Any],
+    payload: WeightSharePayload,
     file_path: str,
     serializer: WeightTensorSerializer,
     private_names: frozenset[str] = frozenset(),
@@ -1108,7 +1133,7 @@ def _rebind_buffer(
 
 def _raise_manifest_mismatch(
     model: torch.nn.Module,
-    payload: dict[str, Any],
+    payload: WeightSharePayload,
     own_tensors: dict[str, torch.Tensor],
     file_path: str,
 ) -> None:
