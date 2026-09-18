@@ -1,7 +1,7 @@
 name: Omni CI
 
 # DAG:
-#   preflight -> setup -> pr-test -> asr-ci -> tts-ci -> qwen3-omni-ci + minicpm-o-ci
+#   preflight -> setup -> pr-test -> asr-ci -> tts-ci -> qwen3-omni-ci
 #                  |         |          |         |              |
 #                  +-- pick-asr-model --+         |
 #                  +-- pick-tts-model ------------+
@@ -60,7 +60,6 @@ env:
   MOSS_TRANSCRIBE_DIARIZE_MODEL_PATH: OpenMOSS-Team/MOSS-Transcribe-Diarize
   FUN_ASR_MODEL_PATH: FunAudioLLM/Fun-ASR-Nano-2512-hf@972ee603a3abb40a66c802ffaa9ba0ce88742b60
   WHISPER_ASR_MODEL_PATH: openai/whisper-large-v3
-  MINICPMO_MODEL_PATH: openbmb/MiniCPM-o-4_5
 
 
 jobs:
@@ -185,7 +184,6 @@ jobs:
           bash .github/scripts/ensure_hf_models.sh omni \
             Qwen/Qwen3-Omni-30B-A3B-Instruct \
             marksverdhei/Qwen3-Omni-30B-A3B-FP8 \
-            "${MINICPMO_MODEL_PATH}" \
             "${QWEN3_ASR_MODEL_PATH}" \
             "${MOSS_TRANSCRIBE_DIARIZE_MODEL_PATH}" \
             "${TTS_MODEL_PATH}" \
@@ -445,18 +443,6 @@ jobs:
             || format('/data/omni-ci/run-{0}', github.run_id) }}
     secrets: inherit
 
-  minicpm-o-ci:
-    name: MiniCPM-o CI
-    needs: setup
-    if: needs.setup.result == 'success'
-    uses: ./.github/workflows/test-minicpm-o-ci.yaml
-    with:
-      omni_ci_home: >-
-        ${{ github.event_name == 'pull_request'
-            && format('/data/omni-ci/pr-{0}', github.event.pull_request.number)
-            || format('/data/omni-ci/run-{0}', github.run_id) }}
-    secrets: inherit
-
   pr-test:
     name: PR Test
     needs: setup
@@ -472,7 +458,7 @@ jobs:
 
   cleanup:
     name: cleanup - reclaim ephemeral run home
-    needs: [setup, pr-test, asr-ci, tts-ci, qwen3-omni-ci, minicpm-o-ci]
+    needs: [setup, pr-test, asr-ci, tts-ci, qwen3-omni-ci]
     if: >-
       always() && !cancelled() &&
       needs.setup.result == 'success' &&
