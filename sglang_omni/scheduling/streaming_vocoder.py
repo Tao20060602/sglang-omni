@@ -447,7 +447,9 @@ class StreamingVocoderBase(
         """All cursor/overlap/crossfade/holdback math plus the codec call;
         ``is_final`` flushes the remainder at stream-done. None emits nothing."""
 
-    def stream_payload(self, request_id: str, waveform: torch.Tensor) -> dict[str, Any]:
+    def stream_payload(
+        self, request_id: str, waveform: torch.Tensor
+    ) -> dict[str, bytes | list[int] | str | int]:
         del request_id
         return audio_waveform_payload(
             waveform,

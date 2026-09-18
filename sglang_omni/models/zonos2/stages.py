@@ -10,7 +10,7 @@ Each stage is a SimpleScheduler compute-fn over a Zonos2State dict carried in
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -150,7 +150,7 @@ def create_vocoder_executor(
         ).reshape(-1)
         # Terminal payload is msgpack'd back to the server: emit only
         # serializable values, never the upstream state tensors.
-        data: dict[str, Any] = dict(
+        data: dict[str, bytes | list[int] | str | int | dict[str, int | float]] = dict(
             audio_waveform_payload(pcm_np, source_hint="ZONOS2")
         )
         data["sample_rate"] = int(state.sample_rate)

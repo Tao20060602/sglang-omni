@@ -2943,10 +2943,10 @@ class Qwen3TTSStreamingVocoderScheduler(
         request_id: str,
         payload: StagePayload,
         state: _Qwen3TTSStreamState,
-    ) -> dict[str, Any]:
+    ) -> dict[str, str | int | dict[str, int | float]]:
         del request_id, state
         final_state = Qwen3TTSState.from_dict(payload.data)
-        data: dict[str, Any] = {
+        data: dict[str, str | int | dict[str, int | float]] = {
             "modality": "audio",
             "sample_rate": self.sample_rate,
         }
@@ -3004,11 +3004,13 @@ class Qwen3TTSStreamingVocoderScheduler(
             cut = int(state.ref_code_len / max(total_frames, 1) * waveform.shape[0])
             waveform = waveform[cut:]
 
-        data = audio_waveform_payload(
-            waveform,
-            sample_rate=int(sample_rate),
-            modality="audio",
-            source_hint="Qwen3-TTS",
+        data: dict[str, bytes | list[int] | str | int | dict[str, int | float]] = dict(
+            audio_waveform_payload(
+                waveform,
+                sample_rate=int(sample_rate),
+                modality="audio",
+                source_hint="Qwen3-TTS",
+            )
         )
         usage = build_usage(state)
         if usage is not None:

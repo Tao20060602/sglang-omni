@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Mapping
 
 import torch
 
@@ -269,7 +269,7 @@ class HiggsStreamingVocoderScheduler(StreamingVocoderBase[_HiggsStreamState, Non
 
     def final_result_data(
         self, request_id: str, payload: StagePayload, state: _HiggsStreamState
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         del request_id, state
         final_data: dict[str, object] = {
             "modality": "audio",
@@ -402,11 +402,13 @@ class HiggsStreamingVocoderScheduler(StreamingVocoderBase[_HiggsStreamState, Non
         state: HiggsTtsState,
         waveform: torch.Tensor | None,
     ) -> StagePayload:
-        data = audio_waveform_payload(
-            waveform if waveform is not None else [],
-            sample_rate=self.sample_rate,
-            modality="audio",
-            source_hint="Higgs TTS vocoder",
+        data: dict[str, object] = dict(
+            audio_waveform_payload(
+                waveform if waveform is not None else [],
+                sample_rate=self.sample_rate,
+                modality="audio",
+                source_hint="Higgs TTS vocoder",
+            )
         )
         usage = build_usage(state)
         if usage is not None:

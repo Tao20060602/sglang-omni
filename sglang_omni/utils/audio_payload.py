@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import numpy as np
 import torch
@@ -27,7 +27,7 @@ def audio_waveform_payload(
     modality: str | None = None,
     source_hint: str = "audio",
     keep_channels: bool = False,
-) -> dict[str, Any]:
+) -> dict[str, bytes | list[int] | str | int]:
     """Serialize a waveform into the relay payload format.
 
     With ``keep_channels`` a rank-2 ``[channels, samples]`` waveform keeps its

@@ -424,12 +424,16 @@ class MiniMaxMusic3AcousticScheduler(StreamingSimpleScheduler[StagePayload]):
         waveform_44k = torch.cat(state.wave_chunks, dim=1)
         waveform_32k = resample_waveform(waveform_44k)
         final_state = state.final_state
-        payload_data = audio_waveform_payload(
-            waveform_32k,
-            sample_rate=OUTPUT_SAMPLE_RATE,
-            modality="audio",
-            source_hint="MiniMax Music 3",
-            keep_channels=True,
+        payload_data: dict[
+            str, bytes | list[int] | str | int | dict[str, int | float]
+        ] = dict(
+            audio_waveform_payload(
+                waveform_32k,
+                sample_rate=OUTPUT_SAMPLE_RATE,
+                modality="audio",
+                source_hint="MiniMax Music 3",
+                keep_channels=True,
+            )
         )
         usage = build_usage(final_state)
         if usage is not None:
