@@ -29,7 +29,7 @@ def _to_pinned_host(value: torch.Tensor) -> torch.Tensor:
 
 def _detach_value(
     value: object, *, device: torch.device | None, pin_memory: bool = False
-) -> Any:
+) -> object:
     if isinstance(value, torch.Tensor):
         value = value.detach()
         if device is not None:
@@ -76,7 +76,7 @@ class StageOutputCache:
         max_size: int | None = None,
         max_bytes: int | None = None,
         cache_device: torch.device | str | None = None,
-        size_fn: Callable[[Any], int] | None = None,
+        size_fn: Callable[[object], int] | None = None,
         pin_memory: bool = False,
     ) -> None:
         if max_size is not None and max_size < 0:
