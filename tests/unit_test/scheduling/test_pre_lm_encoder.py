@@ -34,7 +34,7 @@ class _Service(PreLMEncoderService[int, list[int], int]):
             self._queue.put(_STOP)
             self._thread.join(timeout=2)
 
-    def _next_batch(self) -> tuple[list[QueueEntry[int]], bool]:
+    def _next_batch(self) -> tuple[list[QueueEntry[int, int]], bool]:
         first = self._queue.get()
         if first is _STOP:
             return [], True

@@ -415,7 +415,7 @@ class ArkasrPreLMEncoderService(
 
     def _drain_batch(
         self,
-    ) -> tuple[list[QueueEntry[MultimodalDataItem]], bool]:
+    ) -> tuple[list[QueueEntry[MultimodalDataItem, torch.Tensor]], bool]:
         # the default window is 0 (greedy drain): items that queued while the
         # previous batch encoded are taken instantly, so groups still form
         # under load, and an idle-arrival request never pays a batching wait --
@@ -423,7 +423,7 @@ class ArkasrPreLMEncoderService(
         first = self._queue.get()
         if first is _SHUTDOWN:
             return [], True
-        batch = [cast(QueueEntry[MultimodalDataItem], first)]
+        batch = [cast(QueueEntry[MultimodalDataItem, torch.Tensor], first)]
         deadline = time.monotonic() + self._max_batch_wait_s
         shutdown = False
         while len(batch) < self._max_batch_size:
@@ -439,10 +439,12 @@ class ArkasrPreLMEncoderService(
             if queued is _SHUTDOWN:
                 shutdown = True
                 break
-            batch.append(cast(QueueEntry[MultimodalDataItem], queued))
+            batch.append(cast(QueueEntry[MultimodalDataItem, torch.Tensor], queued))
         return batch, shutdown
 
-    def _next_batch(self) -> tuple[list[QueueEntry[MultimodalDataItem]], bool]:
+    def _next_batch(
+        self,
+    ) -> tuple[list[QueueEntry[MultimodalDataItem, torch.Tensor]], bool]:
         return self._drain_batch()
 
     @contextlib.contextmanager
@@ -502,13 +504,13 @@ class ArkasrPreLMEncoderService(
             self._cache.put(key, embedding)
 
     def _retry_batch(
-        self, batch: list[QueueEntry[MultimodalDataItem]], _exc: Exception
+        self, batch: list[QueueEntry[MultimodalDataItem, torch.Tensor]], _exc: Exception
     ) -> bool:
         return len(batch) > 1
 
     def _handle_batch_failure(
         self,
-        batch: list[QueueEntry[MultimodalDataItem]],
+        batch: list[QueueEntry[MultimodalDataItem, torch.Tensor]],
         exc: Exception,
     ) -> Exception:
         failure = self._detach_failure(exc)
@@ -529,7 +531,7 @@ class ArkasrPreLMEncoderService(
 
     def _handle_item_failure(
         self,
-        _entry: QueueEntry[MultimodalDataItem],
+        _entry: QueueEntry[MultimodalDataItem, torch.Tensor],
         exc: Exception,
     ) -> Exception:
         failure = self._detach_failure(exc)
@@ -579,7 +581,9 @@ class ArkasrPreLMEncoderService(
         except Exception:
             logger.warning("ARK-ASR CUDA cache cleanup failed after OOM", exc_info=True)
 
-    def _on_batch_start(self, batch: list[QueueEntry[MultimodalDataItem]]) -> None:
+    def _on_batch_start(
+        self, batch: list[QueueEntry[MultimodalDataItem, torch.Tensor]]
+    ) -> None:
         dequeue_time = time.perf_counter()
         queue_waits = [
             dequeue_time - entry.enqueued_at
@@ -596,7 +600,7 @@ class ArkasrPreLMEncoderService(
 
     def _on_batch_finished(
         self,
-        batch: list[QueueEntry[MultimodalDataItem]],
+        batch: list[QueueEntry[MultimodalDataItem, torch.Tensor]],
         batch_exc: Exception | None,
         retry_recovered: int | None,
         elapsed_s: float,

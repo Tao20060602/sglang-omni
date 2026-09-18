@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from sglang_omni.scheduling.pre_lm_encoder import PreLMEncoderService, QueueEntry
+from sglang_omni.scheduling.pre_lm_encoder import PreLMEncoderServiceBase, QueueEntry
 from sglang_omni.scheduling.stage_cache import StageOutputCache
 
 if TYPE_CHECKING:
@@ -39,7 +39,9 @@ class _DetachedFailure:
 
 
 class BatchedAudioEncoderService(
-    PreLMEncoderService["MultimodalDataItem", torch.Tensor, torch.Tensor, torch.Tensor]
+    PreLMEncoderServiceBase[
+        "MultimodalDataItem", torch.Tensor, torch.Tensor, None, torch.Tensor
+    ]
 ):
     ENCODE_TIMEOUT_S = 300.0
 
@@ -126,7 +128,7 @@ class BatchedAudioEncoderService(
             and embedding.dtype == self._dtype
         )
 
-    def _drain_batch(self) -> list[QueueEntry[MultimodalDataItem]]:
+    def _drain_batch(self) -> list[QueueEntry[MultimodalDataItem, None]]:
         # note (yichi): never wait — a window costs 8~16ms at low concurrency, buys <=5ms at high.
         batch = [self._queue.get()]
         for _ in range(self._max_batch_size - 1):
@@ -136,7 +138,7 @@ class BatchedAudioEncoderService(
                 break
         return batch
 
-    def _next_batch(self) -> tuple[list[QueueEntry[MultimodalDataItem]], bool]:
+    def _next_batch(self) -> tuple[list[QueueEntry[MultimodalDataItem, None]], bool]:
         return self._drain_batch(), False
 
     def _batch_context(self) -> contextlib.AbstractContextManager[None]:
@@ -183,7 +185,7 @@ class BatchedAudioEncoderService(
 
     def _handle_batch_failure(
         self,
-        batch: list[QueueEntry[MultimodalDataItem]],
+        batch: list[QueueEntry[MultimodalDataItem, None]],
         exc: Exception,
     ) -> Exception:
         failure = self._detach_failure(exc)
@@ -204,7 +206,7 @@ class BatchedAudioEncoderService(
 
     def _handle_item_failure(
         self,
-        _entry: QueueEntry[MultimodalDataItem],
+        _entry: QueueEntry[MultimodalDataItem, None],
         exc: Exception,
     ) -> Exception:
         failure = self._detach_failure(exc)
@@ -216,7 +218,7 @@ class BatchedAudioEncoderService(
         return failure.exception
 
     def _retry_batch(
-        self, batch: list[QueueEntry[MultimodalDataItem]], _exc: Exception
+        self, batch: list[QueueEntry[MultimodalDataItem, None]], _exc: Exception
     ) -> bool:
         return len(batch) > 1
 
@@ -225,7 +227,7 @@ class BatchedAudioEncoderService(
 
     def _on_batch_finished(
         self,
-        batch: list[QueueEntry[MultimodalDataItem]],
+        batch: list[QueueEntry[MultimodalDataItem, None]],
         batch_exc: Exception | None,
         retry_recovered: int | None,
         _elapsed_s: float,
