@@ -8,8 +8,7 @@ import pytest
 import torch
 
 from sglang_omni.models.minicpm_o.payload_types import MiniCPMOPipelineState
-from sglang_omni.models.minicpm_o.request_builders import build_talker_request
-from sglang_omni.models.minicpm_o.talker_model_runner import MiniCPMOTalkerModelRunner
+from sglang_omni.models.minicpm_o.talker_request import build_talker_request
 
 TTS_BOS = 900
 TTS_EOS = 901
@@ -104,6 +103,11 @@ def test_end_clamped_to_captured_hidden():
 
 
 def test_talker_replay_uses_req_fill_ids_api() -> None:
+    pytest.importorskip("sglang")
+    from sglang_omni.models.minicpm_o.talker_model_runner import (
+        MiniCPMOTalkerModelRunner,
+    )
+
     class Embedding:
         weight = torch.empty(8, 4)
 

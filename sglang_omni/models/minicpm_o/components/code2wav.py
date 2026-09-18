@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Code2Wav component for MiniCPM-o.
-
-Wraps stepaudio2's ``Token2wav`` (the remote code's ``init_tts`` dependency)
-to turn s3tokenizer codec tokens into a 24 kHz waveform. The vocoder assets
-live in the checkpoint directory under ``assets/token2wav``; the default
-prompt (speaker reference) wav is ``assets/HT_ref_audio.wav`` when present,
-matching the remote demo's default voice.
-"""
+"""Vocode MiniCPM-o codec tokens with a cached speaker reference."""
 
 from __future__ import annotations
 
@@ -27,7 +20,7 @@ OUTPUT_SAMPLE_RATE = 24000
 
 
 class MiniCPMOCode2Wav(nn.Module):
-    """stepaudio2 Token2wav wrapper: codec tokens → float32 waveform."""
+    """Convert codec tokens into a float32 waveform with Token2wav."""
 
     def __init__(
         self,
@@ -47,9 +40,7 @@ class MiniCPMOCode2Wav(nn.Module):
                 "minicpm-o extra (pip install 'sglang-omni[minicpm-o]')"
             ) from exc
 
-        # Token2wav hardcodes .cuda()/device="cuda" (current-device
-        # semantics), so honor the requested device by pinning the current
-        # CUDA device for construction and every vocode call.
+        # note (MayDomine): Token2wav allocates on the current CUDA device.
         dev = torch.device(device)
         if dev.type != "cuda":
             raise ValueError(f"Token2wav requires a CUDA device, got {device}")
@@ -81,16 +72,7 @@ class MiniCPMOCode2Wav(nn.Module):
         prompt_wav: str | bytes | None = None,
         **_: object,
     ) -> dict[str, object]:
-        """Vocode one utterance.
-
-        Args:
-            codec_tokens: ``(N,)`` s3tokenizer codes (EOS already stripped).
-            prompt_wav: optional path or encoded speaker-reference audio bytes;
-                falls back to the component default.
-
-        Returns:
-            ``waveform``: ``(samples,)`` float32 at 24 kHz; ``sample_rate``.
-        """
+        """Vocode EOS-stripped codec tokens using the supplied or default reference."""
         tokens = codec_tokens.reshape(-1).tolist()
         if not tokens:
             return {
@@ -102,7 +84,9 @@ class MiniCPMOCode2Wav(nn.Module):
             waveform = self._vocode(tokens, reference)
         return {"waveform": waveform, "sample_rate": OUTPUT_SAMPLE_RATE}
 
-    def _get_prompt(self, prompt_wav: str | bytes | None):
+    def _get_prompt(
+        self, prompt_wav: str | bytes | None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if prompt_wav is None:
             raise ValueError("No speaker-reference audio supplied or default available")
         prompt_key = (
@@ -128,9 +112,7 @@ class MiniCPMOCode2Wav(nn.Module):
         return t2w.cache
 
     def _vocode(self, tokens: list[int], prompt_wav: str | bytes | None) -> np.ndarray:
-        """``Token2wav.__call__`` minus its final ``torchaudio.save`` — newer
-        torchaudio (torchcodec backend) cannot encode into ``BytesIO``, and we
-        want the raw waveform anyway."""
+        """Return the waveform directly, avoiding the vocoder's file encoder."""
         t2w = self.token2wav
         (
             prompt_speech_tokens,

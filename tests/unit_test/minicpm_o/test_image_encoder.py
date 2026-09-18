@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 @pytest.fixture
 def tp_context(monkeypatch):
     import sglang.srt.layers.dp_attention as dp
-    from sglang.srt import server_args
+    from sglang.srt import runtime_context, server_args
     from sglang.srt.distributed import parallel_state
 
     monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
@@ -46,6 +46,11 @@ def tp_context(monkeypatch):
     monkeypatch.setattr(parallel_state, "initialize_model_parallel", Mock())
     monkeypatch.setattr(server_args, "ServerArgs", Mock())
     monkeypatch.setattr(server_args, "set_global_server_args_for_scheduler", Mock())
+    monkeypatch.setattr(
+        runtime_context,
+        "get_server_args",
+        Mock(side_effect=ValueError("Global server args is not set yet!")),
+    )
     monkeypatch.setattr(dp, "_ATTN_TP_SIZE", None, raising=False)
     monkeypatch.setattr(dp, "_ATTN_TP_RANK", None, raising=False)
     return dp, parallel_state, server_args
@@ -118,14 +123,71 @@ def _checkpoint_dir() -> Path | None:
     return None
 
 
-def test_patch_attn_mask_vectorization_matches_loop() -> None:
-    patch_counts = torch.tensor([6, 1, 4])
-    max_patches = int(patch_counts.max())
-    ref = torch.zeros(3, 1, max_patches, dtype=torch.bool)
-    for i in range(3):
-        ref[i, 0, : patch_counts[i]] = True
-    got = (torch.arange(max_patches)[None, :] < patch_counts[:, None]).unsqueeze(1)
-    assert torch.equal(got, ref)
+def test_init_sglang_tp_preserves_published_server_args(tp_context, monkeypatch):
+    from sglang.srt import runtime_context
+
+    _, parallel_state, server_args = tp_context
+    parallel_state.model_parallel_is_initialized.return_value = False
+    monkeypatch.setattr(runtime_context, "get_server_args", Mock(return_value=object()))
+
+    _init_sglang_tp()
+
+    server_args.set_global_server_args_for_scheduler.assert_not_called()
+    parallel_state.initialize_model_parallel.assert_called_once_with(
+        tensor_model_parallel_size=1
+    )
+
+
+def test_init_sglang_tp_propagates_unexpected_context_failure(tp_context, monkeypatch):
+    from sglang.srt import runtime_context
+
+    _, parallel_state, server_args = tp_context
+    parallel_state.model_parallel_is_initialized.return_value = False
+    monkeypatch.setattr(
+        runtime_context,
+        "get_server_args",
+        Mock(side_effect=RuntimeError("context lookup failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="context lookup failed"):
+        _init_sglang_tp()
+
+    server_args.set_global_server_args_for_scheduler.assert_not_called()
+    parallel_state.init_distributed_environment.assert_not_called()
+
+
+@pytest.mark.parametrize("batch_size", [2, 16])
+def test_padding_does_not_change_image_embeddings(batch_size: int) -> None:
+    encoder = object.__new__(MiniCPMOImageEncoder)
+    torch.nn.Module.__init__(encoder)
+    encoder._device = torch.device("cpu")
+    encoder._dtype = torch.float32
+    encoder.vision_batch_size = batch_size
+
+    def run_vpm(pixel_values, patch_attn_mask, tgt_sizes, patch_counts_cpu):
+        features = pixel_values.mean(dim=1)
+        pooled = (features * patch_attn_mask).sum(dim=-1) / patch_attn_mask.sum(dim=-1)
+        return pooled.unsqueeze(-1)
+
+    encoder._run_vpm = run_vpm
+    encoder.resampler = lambda features, tgt_sizes: features
+    tgt_sizes = torch.tensor([[1, 6], [1, 1], [1, 4]], dtype=torch.int32)
+    pixel_values = [
+        torch.full((3, 1, count), float(i + 1)) for i, count in enumerate([6, 1, 4])
+    ]
+
+    batched = encoder(pixel_values=pixel_values, tgt_sizes=tgt_sizes)["image_embeds"]
+    individual = torch.cat(
+        [
+            encoder(pixel_values=[pixels], tgt_sizes=tgt_sizes[i : i + 1])[
+                "image_embeds"
+            ]
+            for i, pixels in enumerate(pixel_values)
+        ]
+    )
+
+    torch.testing.assert_close(batched, individual)
+    torch.testing.assert_close(batched[:, 0], torch.tensor([1.0, 2.0, 3.0]))
 
 
 def test_vision_config_object_preserves_config_instances() -> None:

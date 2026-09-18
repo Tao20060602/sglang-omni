@@ -1,27 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Stage executor factories for the MiniCPM-o pipeline (text path)."""
+"""Stage executor factories for MiniCPM-o text and speech pipelines."""
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sglang_omni.proto import StagePayload
 
+if TYPE_CHECKING:
+    from torch import nn
+
+    from sglang_omni.models.qwen3_omni.components.streaming_detokenizer import (
+        StreamingDetokenizeScheduler,
+    )
+    from sglang_omni.scheduling.omni_scheduler import OmniScheduler
+    from sglang_omni.scheduling.simple_scheduler import SimpleScheduler
+    from sglang_omni.scheduling.stage_cache import StageOutputCache
+
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Simple stages — return SimpleScheduler
-# ---------------------------------------------------------------------------
 
 
 def create_preprocessing_executor(
     model_path: str,
     *,
     speech_enabled: bool = False,
-):
+) -> SimpleScheduler:
     from sglang_omni.models.minicpm_o.components.preprocessor import (
         MiniCPMOPreprocessor,
     )
@@ -29,10 +34,7 @@ def create_preprocessing_executor(
 
     preprocessor = MiniCPMOPreprocessor(model_path, speech_enabled=speech_enabled)
 
-    async def _preprocess(payload: StagePayload) -> StagePayload:
-        return await preprocessor(payload)
-
-    return SimpleScheduler(_preprocess)
+    return SimpleScheduler(preprocessor)
 
 
 ENCODER_CACHE_MAX_ENTRIES = 64
@@ -43,8 +45,8 @@ def _run_single_encoder_payload(
     payload: StagePayload,
     *,
     stage_name: str,
-    model: Any,
-    cache: Any,
+    model: nn.Module,
+    cache: StageOutputCache | None,
 ) -> StagePayload:
     import torch
 
@@ -72,7 +74,7 @@ def _run_single_encoder_payload(
     return payload
 
 
-def _create_encoder_executor(model: Any, *, stage_name: str):
+def _create_encoder_executor(model: nn.Module, *, stage_name: str) -> SimpleScheduler:
     from sglang_omni.scheduling.simple_scheduler import SimpleScheduler
     from sglang_omni.scheduling.stage_cache import StageOutputCache
 
@@ -96,7 +98,7 @@ def create_image_encoder_executor(
     device: str | None = None,
     gpu_id: int | None = None,
     dtype: str | None = None,
-):
+) -> SimpleScheduler:
     from sglang_omni.models.minicpm_o.components.image_encoder import (
         MiniCPMOImageEncoder,
     )
@@ -114,7 +116,7 @@ def create_audio_encoder_executor(
     device: str | None = None,
     gpu_id: int | None = None,
     dtype: str | None = None,
-):
+) -> SimpleScheduler:
     from sglang_omni.models.minicpm_o.components.audio_encoder import (
         MiniCPMOAudioEncoder,
     )
@@ -136,7 +138,7 @@ def create_sglang_talker_executor_from_config(
     max_seq_len: int = 4096,
     server_args_overrides: dict[str, Any] | None = None,
     total_gpu_memory_fraction: float | None = None,
-):
+) -> OmniScheduler:
     """Returns OmniScheduler for the native sglang MiniCPM-o talker."""
     from sglang.srt.arg_groups.model_override_base import resolved_view
 
@@ -145,7 +147,9 @@ def create_sglang_talker_executor_from_config(
         build_generation_batch_overrides,
         validate_generation_batch_policy,
     )
-    from sglang_omni.scheduling.sglang_backend import build_sglang_server_args
+    from sglang_omni.scheduling.sglang_backend.server_args_builder import (
+        build_sglang_server_args,
+    )
     from sglang_omni.utils.misc import avail_gpu_mem
 
     overrides = build_generation_batch_overrides(
@@ -155,9 +159,7 @@ def create_sglang_talker_executor_from_config(
         sampling_backend="pytorch",
     )
     overrides["tp_size"] = tp_size
-    # The talker shares the thinker's GPU; a fraction-based KV budget would
-    # starve the thinker engine. Cap the pool at the worst case instead:
-    # every running request at full context.
+    # note (MayDomine): cap talker KV allocation so it does not starve the thinker.
     overrides.setdefault("max_total_tokens", 32 * max_seq_len)
     server_args = build_sglang_server_args(
         model_path,
@@ -197,10 +199,10 @@ def create_code2wav_executor(
     device: str | None = None,
     gpu_id: int | None = None,
     float16: bool = False,
-):
+) -> SimpleScheduler:
     from sglang_omni.models.minicpm_o.components.code2wav import MiniCPMOCode2Wav
     from sglang_omni.models.minicpm_o.payload_types import MiniCPMOPipelineState
-    from sglang_omni.models.minicpm_o.request_builders import (
+    from sglang_omni.models.minicpm_o.routing import (
         TALKER_STAGE,
         code2wav_reference_audio,
     )
@@ -234,19 +236,12 @@ def create_code2wav_executor(
     return SimpleScheduler(_vocode)
 
 
-def create_decode_executor(model_path: str):
-    # State keys deliberately mirror qwen3_omni, so its streaming text
-    # detokenizer applies unchanged.
+def create_decode_executor(model_path: str) -> StreamingDetokenizeScheduler:
     from sglang_omni.models.qwen3_omni.components.streaming_detokenizer import (
         create_streaming_detokenize_scheduler,
     )
 
     return create_streaming_detokenize_scheduler(model_path)
-
-
-# ---------------------------------------------------------------------------
-# AR stages — return OmniScheduler
-# ---------------------------------------------------------------------------
 
 
 def create_sglang_thinker_executor_from_config(
@@ -262,7 +257,7 @@ def create_sglang_thinker_executor_from_config(
     enable_async_decode: bool = True,
     async_decode_min_batch_size: int = 2,
     speech_enabled: bool = False,
-):
+) -> OmniScheduler:
     """Returns OmniScheduler for the MiniCPM-o thinker."""
     from sglang.srt.arg_groups.model_override_base import resolved_view
 
@@ -271,7 +266,9 @@ def create_sglang_thinker_executor_from_config(
         build_generation_batch_overrides,
         validate_generation_batch_policy,
     )
-    from sglang_omni.scheduling.sglang_backend import build_sglang_server_args
+    from sglang_omni.scheduling.sglang_backend.server_args_builder import (
+        build_sglang_server_args,
+    )
     from sglang_omni.utils.misc import avail_gpu_mem
 
     overrides = build_generation_batch_overrides(

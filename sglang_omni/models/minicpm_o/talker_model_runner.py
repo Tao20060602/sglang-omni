@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -13,34 +13,27 @@ from sglang_omni.model_runner.prefill_inputs import (
     attach_omni_prefill_inputs,
 )
 
-# The checkpoint's CustomRepetitionPenaltyLogitsProcessorRepeat scores only
-# the most recent window of generated codes.
+if TYPE_CHECKING:
+    from sglang.srt.layers.logits_processor import LogitsProcessorOutput
+    from sglang.srt.managers.schedule_batch import ScheduleBatch
+    from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+
+    from sglang_omni.scheduling.types import SchedulerRequest
+
+# note (MayDomine): the checkpoint penalizes only the most recent 16 codec tokens.
 REP_PENALTY_WINDOW = 16
 
 
 class MiniCPMOTalkerModelRunner(ModelRunner):
-    """Feedback-free codec runner.
-
-    Prefill feeds the projected condition embeddings through the omni
-    sidecar; decode is the standard sglang path (``get_input_embeddings`` is
-    ``emb_code``). The only sampling divergence from the base runner is the
-    repetition penalty: the checkpoint applies a frequency-based penalty
-    (``penalty**count``) over a sliding window of the last 16 generated
-    codes, while both the base implementation and sglang's native
-    ``BatchedRepetitionPenalizer`` (applied inside ``model_runner.sample``)
-    are presence-based over the whole output stream — far too aggressive for
-    codec sequences that legitimately revisit tokens. The request builder
-    therefore keeps ``sampling_params.repetition_penalty`` at 1.0 (both
-    presence penalties stay inert) and passes the real penalty through
-    ``data.talker_model_inputs["rep_penalty"]``, applied here. Batches stay
-    on the sync decode path via the base ``lookahead_eligible`` gate because
-    ``sampling_params.min_new_tokens`` is nonzero.
-    """
+    """Prefill codec conditions and apply a frequency penalty over recent tokens."""
 
     def before_prefill(
-        self, forward_batch: Any, schedule_batch: Any, requests: list
+        self,
+        forward_batch: ForwardBatch,
+        schedule_batch: ScheduleBatch,
+        requests: list[SchedulerRequest],
     ) -> None:
-        del schedule_batch
+        """Prepare request embeddings; schedule_batch follows the runner interface."""
         parts: list[torch.Tensor] = []
         for sched_req in requests:
             data = sched_req.data
@@ -56,8 +49,7 @@ class MiniCPMOTalkerModelRunner(ModelRunner):
             if prefix_len < prompt_len:
                 parts.append(tensor[prefix_len : min(end, prompt_len)])
             if end > prompt_len:
-                # Retract replay: re-embed already-generated codec tokens the
-                # same way decode does.
+                # note (MayDomine): retracted requests replay already-generated tokens.
                 fill_ids = req.get_fill_ids()
                 generated = torch.tensor(
                     fill_ids[max(prefix_len, prompt_len) : end],
@@ -83,7 +75,9 @@ class MiniCPMOTalkerModelRunner(ModelRunner):
             ),
         )
 
-    def _apply_repetition_penalty(self, logits_output: Any, requests: list) -> None:
+    def _apply_repetition_penalty(
+        self, logits_output: LogitsProcessorOutput, requests: list[SchedulerRequest]
+    ) -> None:
         logits = logits_output.next_token_logits
         if logits is None or logits.ndim != 2:
             return
@@ -109,9 +103,7 @@ class MiniCPMOTalkerModelRunner(ModelRunner):
             windows.append(window)
         if not penalized_rows:
             return
-        # Vectorized window counting: pad the ragged windows into a dummy bin
-        # at index `vocab` and scatter_add once per batch, instead of building
-        # per-request Python count dicts on the decode hot path.
+        # note (MayDomine): a dummy vocabulary bin excludes ragged-window padding.
         num = len(windows)
         window_ids = torch.full((num, REP_PENALTY_WINDOW), vocab, dtype=torch.long)
         for i, window in enumerate(windows):
@@ -133,5 +125,7 @@ class MiniCPMOTalkerModelRunner(ModelRunner):
         scores = torch.where(counts > 0, penalized, scores)
         logits[rows_t] = scores.to(orig_dtype)
 
-    def _process_sampling_logits(self, logits_output: Any, requests: list) -> None:
+    def _process_sampling_logits(
+        self, logits_output: LogitsProcessorOutput, requests: list[SchedulerRequest]
+    ) -> None:
         self._apply_repetition_penalty(logits_output, requests)

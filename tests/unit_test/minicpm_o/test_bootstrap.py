@@ -13,7 +13,7 @@ from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import hf_transformers_utils
 
 from sglang_omni.models.minicpm_o import bootstrap as minicpm_bootstrap
-from sglang_omni.models.minicpm_o import request_builders
+from sglang_omni.models.minicpm_o import request_builders, talker_request
 from sglang_omni.scheduling import bootstrap
 from sglang_omni.scheduling.omni_scheduler import OmniScheduler
 from sglang_omni.vendor.sglang.server_args import override_server_args
@@ -79,9 +79,9 @@ def dependencies(monkeypatch):
         "get_tokenizer",
         Mock(return_value=SimpleNamespace(convert_tokens_to_ids=lambda token: 1)),
     )
-    for stage in ("thinker", "talker"):
+    for stage, module in (("thinker", request_builders), ("talker", talker_request)):
         monkeypatch.setattr(
-            request_builders,
+            module,
             f"make_{stage}_scheduler_adapters",
             Mock(return_value=(object(), object())),
         )

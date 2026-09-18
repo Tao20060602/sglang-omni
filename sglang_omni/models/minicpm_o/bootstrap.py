@@ -3,44 +3,45 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sglang.srt.server_args import ServerArgs
+
+    from sglang_omni.scheduling.omni_scheduler import OmniScheduler
+    from sglang_omni.scheduling.types import SchedulerRequest
 
 
 def create_talker_scheduler(
-    server_args: Any,
+    server_args: ServerArgs,
     gpu_id: int = 0,
     *,
     tp_rank: int = 0,
     nccl_port: int | None = None,
     total_gpu_memory_fraction: float | None = None,
-):
-    """Create the MiniCPM-o talker scheduler.
-
-    The talker runs the checkpoint's 20-layer TTS backbone as a native sglang
-    AR stage: prefill consumes the projected condition embeddings, decode
-    embeds the previous codec token natively (no feedback loop), so overlap
-    scheduling and CUDA graphs both stay on. Radix caching is disabled because
-    prompts are per-request embeddings, and chunked prefill is off because the
-    condition must land in one prefill pass.
-    """
+) -> OmniScheduler:
+    """Create a codec scheduler with per-request condition embeddings."""
     from sglang.srt.arg_groups.model_override_base import resolved_view
     from sglang.srt.utils.hf_transformers_utils import get_tokenizer
 
-    from sglang_omni.models.minicpm_o.request_builders import (
-        make_talker_scheduler_adapters,
-    )
     from sglang_omni.models.minicpm_o.talker_model_runner import (
         MiniCPMOTalkerModelRunner,
+    )
+    from sglang_omni.models.minicpm_o.talker_request import (
+        make_talker_scheduler_adapters,
     )
     from sglang_omni.scheduling.bootstrap import (
         create_sglang_infrastructure,
         init_sglang_cuda_graphs,
     )
     from sglang_omni.scheduling.omni_scheduler import OmniScheduler
-    from sglang_omni.scheduling.sglang_backend import SGLangOutputProcessor
+    from sglang_omni.scheduling.sglang_backend.output_processor import (
+        SGLangOutputProcessor,
+    )
     from sglang_omni.vendor.sglang.server_args import override_server_args
 
     want_cuda_graph = not bool(resolved_view(server_args).disable_cuda_graph)
+    # note (MayDomine): condition embeddings require an uncached, unsplit prefill.
     override_server_args(
         server_args,
         "sglang_omni.minicpm_o.talker",
@@ -60,16 +61,14 @@ def create_talker_scheduler(
         tp_rank=tp_rank,
         nccl_port=nccl_port,
         model_arch_override="MiniCPMOTalkerForCausalLM",
-        # The model's load_weights strips the ``tts.`` prefix itself.
+        # note (MayDomine): the model loader strips its own tts weight prefix.
         weight_prefix=None,
         total_gpu_memory_fraction=total_gpu_memory_fraction,
         defer_cuda_graph_capture=want_cuda_graph,
     )
 
     model = model_worker.model_runner.model
-    # Align vocab bookkeeping to the codec vocab before graph capture: post1
-    # sizes sampling-orchestrator buffers from model_config.vocab_size (the
-    # thinker text vocab), which mismatches the talker's codec-vocab logits.
+    # note (MayDomine): graph sampling buffers must use the codec vocabulary size.
     codec_vocab_size = model.num_audio_tokens
     model_config.vocab_size = codec_vocab_size
     model._sampler = model_worker.model_runner.sampler
@@ -106,7 +105,7 @@ def create_talker_scheduler(
 
 
 def create_thinker_scheduler(
-    server_args: Any,
+    server_args: ServerArgs,
     gpu_id: int = 0,
     *,
     tp_rank: int = 0,
@@ -115,22 +114,16 @@ def create_thinker_scheduler(
     enable_async_decode: bool = True,
     async_decode_min_batch_size: int = 2,
     speech_enabled: bool = False,
-):
-    """Create the MiniCPM-o thinker scheduler.
-
-    With ``speech_enabled`` the runner captures per-step last-layer hidden
-    states using CaptureHiddenMode.FULL for graph compatibility; the output
-    processor selects each request's last row. The talker consumes them as
-    the TTS condition alongside the generated token ids.
-    """
+) -> OmniScheduler:
+    """Create a thinker scheduler with optional hidden-state capture for speech."""
     from sglang.srt.arg_groups.model_override_base import resolved_view
     from sglang.srt.utils.hf_transformers_utils import get_tokenizer
 
     from sglang_omni.models.minicpm_o.request_builders import (
         make_thinker_scheduler_adapters,
         make_thinker_stream_output_builder,
-        should_generate_audio_output,
     )
+    from sglang_omni.models.minicpm_o.routing import should_generate_audio_output
     from sglang_omni.models.minicpm_o.thinker_model_runner import (
         MiniCPMOThinkerModelRunner,
     )
@@ -139,7 +132,9 @@ def create_thinker_scheduler(
         init_sglang_cuda_graphs,
     )
     from sglang_omni.scheduling.omni_scheduler import OmniScheduler
-    from sglang_omni.scheduling.sglang_backend import SGLangOutputProcessor
+    from sglang_omni.scheduling.sglang_backend.output_processor import (
+        SGLangOutputProcessor,
+    )
     from sglang_omni.vendor.sglang.server_args import override_server_args
 
     cfg = resolved_view(server_args)
@@ -184,7 +179,7 @@ def create_thinker_scheduler(
         model_config,
     ) = infrastructure
 
-    def _should_emit_hidden(request: Any) -> bool:
+    def _should_emit_hidden(request: SchedulerRequest) -> bool:
         return should_generate_audio_output(request.data.stage_payload)
 
     output_proc = SGLangOutputProcessor(

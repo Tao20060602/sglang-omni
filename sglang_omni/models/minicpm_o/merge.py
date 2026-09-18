@@ -10,14 +10,7 @@ from sglang_omni.proto import StagePayload
 
 
 def merge_for_thinker(payloads: dict[str, StagePayload]) -> StagePayload:
-    """Merge fan-in payloads into a single thinker-ready payload.
-
-    The preprocessing payload carries prompt/mm metadata; each encoder payload
-    carries its ``encoder_outs`` entry. The merged state moves encoder outputs
-    into ``thinker_inputs["model_inputs"]`` and drops the raw encoder fields so
-    embeddings do not cross the wire twice. A text-only request merges to the
-    canonical empty shape ``{"model_inputs": {}}``.
-    """
+    """Merge encoder embeddings into thinker inputs without duplicating payloads."""
     base = payloads.get("preprocessing") or next(iter(payloads.values()))
     state = MiniCPMOPipelineState.from_dict(base.data)
 

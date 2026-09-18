@@ -10,7 +10,7 @@ import torch
 
 from sglang_omni.models.minicpm_o.components.code2wav import MiniCPMOCode2Wav
 from sglang_omni.models.minicpm_o.payload_types import MiniCPMOPipelineState
-from sglang_omni.models.minicpm_o.request_builders import (
+from sglang_omni.models.minicpm_o.routing import (
     code2wav_reference_audio,
     project_talker_to_code2wav,
     project_thinker_to_talker,

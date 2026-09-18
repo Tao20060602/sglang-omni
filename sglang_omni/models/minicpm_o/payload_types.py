@@ -1,22 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
-"""MiniCPM-o payload schemas.
-
-The state keys deliberately mirror ``qwen3_omni.payload_types`` so the shared
-streaming detokenizer (which reads ``thinker_out`` / ``stream_state`` from the
-payload dict) works unchanged for this pipeline.
-"""
+"""MiniCPM-o state schemas compatible with the shared streaming detokenizer."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
+
+if TYPE_CHECKING:
+    import torch
 
 
 class PromptInputs(TypedDict):
     """Tokenized prompt inputs for the thinker."""
 
-    input_ids: Any
-    attention_mask: Any
+    input_ids: torch.Tensor
+    attention_mask: torch.Tensor
     prompt_text: str
 
 
@@ -29,13 +27,9 @@ class ThinkerOutput(TypedDict, total=False):
     extra_model_outputs: dict[str, Any]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MiniCPMOPipelineState:
-    """Typed view of the per-request pipeline state.
-
-    Stays msgpack-safe by converting back to plain dicts before crossing
-    process boundaries.
-    """
+    """Per-request state serialized as plain dictionaries across processes."""
 
     prompt: PromptInputs | None = None
     mm_inputs: dict[str, Any] = field(default_factory=dict)

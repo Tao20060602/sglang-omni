@@ -1,18 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""MiniCPM-o preprocessing: chat template + media feature extraction.
-
-Multimodal requests run through the checkpoint's remote-code
-``MiniCPMOProcessor`` (slice_mode image slicing, whisper mel extraction), which
-also returns the ``image_bound`` / ``audio_bounds`` index ranges that mark the
-``<unk>`` placeholder runs inside ``input_ids``. Those bounds drive embedding
-injection in the thinker stage.
-"""
+"""Render MiniCPM-o prompts and extract media features and placeholder bounds."""
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from PIL import Image
@@ -30,23 +22,19 @@ from sglang_omni.preprocessing.image import (
 )
 from sglang_omni.proto import StagePayload
 
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
+
 logger = logging.getLogger(__name__)
 
 IMAGE_PLACEHOLDER = "<image>./</image>"
 AUDIO_PLACEHOLDER = "<audio>./</audio>"
 
-# Task prompts from the checkpoint's README ("Audio Understanding"); the
-# Chinese prompt also covers AST EN->ZH and the English one AST ZH->EN.
+# note (MayDomine): task prompts match the checkpoint's audio-understanding template.
 ASR_PROMPT_ZH = "请仔细听这段音频片段，并将其内容逐字记录。"
 ASR_PROMPT_EN = (
     "Please listen to the audio snippet carefully and transcribe the content."
 )
-
-
-def _resolve_local_model_dir(model_path: str) -> str:
-    if Path(model_path).exists():
-        return model_path
-    return str(resolve_model_path(model_path, local_files_only=False))
 
 
 def _first_batch_item(value: Any) -> Any:
@@ -106,19 +94,14 @@ class MiniCPMOPreprocessor:
         model_path: str,
         *,
         speech_enabled: bool = False,
-    ):
-        local_dir = _resolve_local_model_dir(model_path)
+    ) -> None:
+        local_dir = str(resolve_model_path(model_path))
         self.tokenizer = AutoTokenizer.from_pretrained(
             local_dir, trust_remote_code=True
         )
-        # Lazy: the remote-code processor pulls in whisper feature extraction;
-        # text-only deployments never need it.
+        # note (MayDomine): text-only requests do not need Whisper feature extraction.
         self._local_dir = local_dir
         self._processor = None
-        # Speech pipelines render the tts chat template for audio-output
-        # requests so the thinker emits a <|tts_bos|>...<|tts_eos|> span for
-        # the talker; the remote code's chat() does the same via
-        # use_tts_template before generating speech.
         self._speech_enabled = speech_enabled
 
     def _speech_to_text_inputs(
@@ -134,14 +117,12 @@ class MiniCPMOPreprocessor:
         return [{"role": "user", "content": prompt}], [audio]
 
     def _use_tts_template(self, payload: StagePayload) -> bool:
-        from sglang_omni.models.minicpm_o.request_builders import (
-            should_generate_audio_output,
-        )
+        from sglang_omni.models.minicpm_o.routing import should_generate_audio_output
 
         return self._speech_enabled and should_generate_audio_output(payload)
 
     @property
-    def processor(self):
+    def processor(self) -> ProcessorMixin:
         if self._processor is None:
             self._processor = AutoProcessor.from_pretrained(
                 self._local_dir, trust_remote_code=True
@@ -155,7 +136,6 @@ class MiniCPMOPreprocessor:
         raw_videos = None
         video_params: dict[str, Any] = {}
         if isinstance(inputs, dict) and inputs.get("audio_bytes") is not None:
-            # /v1/audio/transcriptions upload: build the README ASR chat turn.
             messages, raw_audios = self._speech_to_text_inputs(payload, inputs)
         elif isinstance(inputs, dict):
             messages = inputs.get("messages", [])
@@ -191,8 +171,7 @@ class MiniCPMOPreprocessor:
             and messages
             and all(isinstance(token, int) for token in messages)
         ):
-            # Pre-tokenized prompt ids (rollout path): use them verbatim so
-            # serving tokens match the caller's exactly.
+            # note (MayDomine): rollout prompt ids must match the caller's exactly.
             prompt_text = ""
             input_ids = torch.tensor(messages, dtype=torch.long)
         else:
@@ -212,7 +191,6 @@ class MiniCPMOPreprocessor:
             stream_state={"token_ids": [], "text": ""},
         )
         payload.data = state.to_dict()
-        # Downstream projections consume the canonical state.
         payload.request.inputs = None
         return payload
 
@@ -256,11 +234,7 @@ class MiniCPMOPreprocessor:
         num_images: int,
         num_audios: int,
     ) -> list[dict[str, Any]]:
-        """Inject media placeholders into the last user message.
-
-        Mirrors the remote code's ``chat()``: placeholder markers and the text
-        are joined with newlines, placeholders first.
-        """
+        """Prepend media placeholders to the last user message."""
         result: list[dict[str, Any]] = []
         messages = self._normalize_message_contents(messages)
         for i, msg in enumerate(messages):
@@ -338,8 +312,7 @@ class MiniCPMOPreprocessor:
         encoder_inputs: dict[str, dict[str, Any]] = {}
         if images:
             image_bound = _first_batch_item(processed["image_bound"])
-            # pixel_values is nested [batch][image] with one tensor per slice;
-            # flatten to a slice list — bound ranges appear in the same order.
+            # note (MayDomine): slice order must match the placeholder bound order.
             pixel_values = [
                 slice_tensor
                 for per_image in processed["pixel_values"][0]

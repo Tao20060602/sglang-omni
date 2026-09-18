@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Engine request/response helpers for MiniCPM-o stages."""
+"""Encoder and thinker request adapters for MiniCPM-o."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import xxhash
@@ -13,82 +14,22 @@ from sglang_omni.models.minicpm_o.payload_types import (
     MiniCPMOPipelineState,
     ThinkerOutput,
 )
-from sglang_omni.proto import StagePayload
+from sglang_omni.models.minicpm_o.routing import (
+    DECODE_STAGE,
+    THINKER_STAGE,
+    payload_with_state,
+)
+from sglang_omni.proto.request import StagePayload
 from sglang_omni.scheduling.messages import OutgoingMessage
-from sglang_omni.scheduling.sglang_backend import SGLangARRequestData
+from sglang_omni.scheduling.types import RequestOutput
 
-IMAGE_STAGE = "image_encoder"
-AUDIO_STAGE = "audio_encoder"
-THINKER_STAGE = "thinker"
-DECODE_STAGE = "decode"
-TALKER_STAGE = "talker"
-CODE2WAV_STAGE = "code2wav"
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizerBase
+
+    from sglang_omni.scheduling.sglang_backend.request_data import SGLangARRequestData
 
 
-def output_modalities(request: Any) -> set[str] | None:
-    # The serving client forwards the API-level ``modalities`` field as
-    # ``metadata["output_modalities"]`` (same contract qwen3_omni reads).
-    metadata = getattr(request, "metadata", None) or {}
-    modalities = metadata.get("output_modalities")
-    if modalities is None:
-        return None
-    if isinstance(modalities, str):
-        values = (modalities,)
-    elif isinstance(modalities, (list, tuple, set)):
-        values = modalities
-    else:
-        return None
-    return {str(modality).lower() for modality in values}
-
-
-def should_generate_audio_output(
-    payload_or_request: Any,
-) -> bool:
-    request = (
-        payload_or_request.request
-        if isinstance(payload_or_request, StagePayload)
-        else payload_or_request
-    )
-    modalities = output_modalities(request)
-    return modalities is None or "audio" in modalities
-
-
-def code2wav_reference_audio(payload: StagePayload) -> bytes | None:
-    """Read an explicit, inline speaker reference from request parameters."""
-    from sglang_omni.utils.audio import decode_audio_data_uri
-    from sglang_omni.utils.audio_payload import audio_data_uri_from_reference
-
-    params = payload.request.params or {}
-    metadata = payload.request.metadata or {}
-    stage_params = params.get("stage_params") or {}
-    sources = (
-        stage_params.get(CODE2WAV_STAGE) or {},
-        metadata.get("audio_config") or {},
-        metadata.get("tts_params") or {},
-        params,
-    )
-    for source in sources:
-        for key in ("ref_audio", "prompt_wav"):
-            reference = source.get(key)
-            if reference is None:
-                continue
-            if isinstance(reference, dict):
-                reference = audio_data_uri_from_reference(reference)
-            if isinstance(reference, bytes):
-                if reference:
-                    return reference
-            elif isinstance(reference, str):
-                decoded = decode_audio_data_uri(reference)
-                if decoded:
-                    return decoded
-            raise ValueError(
-                "MiniCPM-o ref_audio must be inline audio bytes or a base64 data "
-                "URI; encode local files before sending"
-            )
-    return None
-
-
-def _resolve_seed(params: dict[str, Any]) -> int | None:
+def resolve_sampling_seed(params: dict[str, Any]) -> int | None:
     for key in ("seed", "sampling_seed"):
         value = params.get(key)
         if value is not None:
@@ -96,206 +37,7 @@ def _resolve_seed(params: dict[str, Any]) -> int | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Routing / projection edges
-# ---------------------------------------------------------------------------
-
-
-def resolve_preprocessing_next_stages(
-    request_id: str, output: StagePayload
-) -> list[str]:
-    del request_id
-    state = MiniCPMOPipelineState.from_dict(output.data)
-    return [
-        *_encoder_stages_with_model_inputs(state.encoder_inputs),
-        THINKER_STAGE,
-    ]
-
-
-def resolve_thinker_wait_sources(
-    request_id: str,
-    from_stage: str,
-    payload: StagePayload,
-) -> list[str] | None:
-    del request_id
-    if from_stage != "preprocessing":
-        return None
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    return [
-        "preprocessing",
-        *_encoder_stages_with_model_inputs(state.encoder_inputs),
-    ]
-
-
-def project_preprocessing_to_image_encoder(payload: StagePayload) -> StagePayload:
-    return _project_preprocessing_to_encoder(payload, stage_name=IMAGE_STAGE)
-
-
-def project_preprocessing_to_audio_encoder(payload: StagePayload) -> StagePayload:
-    return _project_preprocessing_to_encoder(payload, stage_name=AUDIO_STAGE)
-
-
-def project_preprocessing_to_thinker(payload: StagePayload) -> StagePayload:
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    projected = MiniCPMOPipelineState(
-        prompt=dict(state.prompt) if isinstance(state.prompt, dict) else None,
-        mm_inputs=dict(state.mm_inputs),
-        encoder_inputs=_project_encoder_input_metadata(state.encoder_inputs),
-        stream_state=dict(state.stream_state),
-    )
-    return _payload_with_state(payload, projected)
-
-
-def project_encoder_to_thinker(payload: StagePayload) -> StagePayload:
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    if len(state.encoder_outs) != 1:
-        raise ValueError(
-            "Expected exactly one encoder output in payload, got "
-            f"{sorted(state.encoder_outs)}"
-        )
-    stage_name = next(iter(state.encoder_outs))
-    projected = MiniCPMOPipelineState(
-        encoder_outs={stage_name: state.encoder_outs[stage_name]}
-    )
-    return _payload_with_state(payload, projected)
-
-
-def resolve_thinker_next_stages(request_id: str, output: StagePayload) -> list[str]:
-    del request_id
-    if should_generate_audio_output(output):
-        return [DECODE_STAGE, TALKER_STAGE]
-    return [DECODE_STAGE]
-
-
-def resolve_terminal_stages(request: Any) -> list[str]:
-    if should_generate_audio_output(request):
-        return [DECODE_STAGE, CODE2WAV_STAGE]
-    return [DECODE_STAGE]
-
-
-def project_thinker_to_talker(payload: StagePayload) -> StagePayload:
-    """Keep only what the talker consumes: prompt ids + thinker output ids
-    and the per-step hidden state sequence."""
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    thinker_out = state.thinker_out if isinstance(state.thinker_out, dict) else {}
-    extra = thinker_out.get("extra_model_outputs") or {}
-    projected = MiniCPMOPipelineState(
-        prompt=dict(state.prompt) if isinstance(state.prompt, dict) else None,
-        thinker_out={
-            "output_ids": list(thinker_out.get("output_ids") or []),
-            "extra_model_outputs": {
-                "hidden_states_seq": extra.get("hidden_states_seq") or [],
-            },
-        },
-    )
-    return _payload_with_state(payload, projected)
-
-
-def project_talker_to_code2wav(payload: StagePayload) -> StagePayload:
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    projected = MiniCPMOPipelineState(
-        engine_outputs={TALKER_STAGE: state.engine_outputs.get(TALKER_STAGE) or {}},
-    )
-    return _payload_with_state(payload, projected)
-
-
-def project_thinker_to_decode(payload: StagePayload) -> StagePayload:
-    """Keep decode payload focused on text detokenization state."""
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    state.thinker_inputs = {}
-
-    if isinstance(state.thinker_out, dict):
-        thinker_out = dict(state.thinker_out)
-        thinker_out.pop("extra_model_outputs", None)
-        state.thinker_out = thinker_out
-
-    if state.engine_outputs:
-        engine_outputs = dict(state.engine_outputs)
-        thinker_engine_out = engine_outputs.get(THINKER_STAGE)
-        if isinstance(thinker_engine_out, dict):
-            thinker_engine_out = dict(thinker_engine_out)
-            thinker_engine_out.pop("extra_model_outputs", None)
-            engine_outputs[THINKER_STAGE] = thinker_engine_out
-        state.engine_outputs = engine_outputs
-
-    return _payload_with_state(payload, state)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _project_preprocessing_to_encoder(
-    payload: StagePayload,
-    *,
-    stage_name: str,
-) -> StagePayload:
-    state = MiniCPMOPipelineState.from_dict(payload.data)
-    stage_inputs = state.encoder_inputs.get(stage_name)
-    encoder_inputs = (
-        {stage_name: dict(stage_inputs)} if isinstance(stage_inputs, dict) else {}
-    )
-    projected = MiniCPMOPipelineState(encoder_inputs=encoder_inputs)
-    return _payload_with_state(payload, projected)
-
-
-def _payload_with_state(
-    payload: StagePayload, state: MiniCPMOPipelineState
-) -> StagePayload:
-    return StagePayload(
-        request_id=payload.request_id,
-        request=payload.request,
-        data=state.to_dict(),
-    )
-
-
-def _project_encoder_input_metadata(
-    encoder_inputs: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    projected: dict[str, dict[str, Any]] = {}
-    for stage_name, stage_inputs in encoder_inputs.items():
-        if not isinstance(stage_inputs, dict):
-            continue
-        stage_metadata: dict[str, Any] = {}
-        cache_key = stage_inputs.get("cache_key")
-        if cache_key is not None:
-            stage_metadata["cache_key"] = cache_key
-        if _has_encoder_model_input(stage_name, stage_inputs):
-            stage_metadata["_active"] = True
-        if stage_metadata:
-            projected[stage_name] = stage_metadata
-    return projected
-
-
-def _encoder_stages_with_model_inputs(
-    encoder_inputs: dict[str, dict[str, Any]],
-) -> list[str]:
-    return [
-        stage_name
-        for stage_name in (IMAGE_STAGE, AUDIO_STAGE)
-        if _has_encoder_model_input(stage_name, encoder_inputs.get(stage_name))
-    ]
-
-
-def _has_encoder_model_input(stage_name: str, stage_inputs: Any) -> bool:
-    if not isinstance(stage_inputs, dict):
-        return False
-    if stage_inputs.get("_active") is not None:
-        return stage_inputs.get("_active") is True
-    if stage_name == IMAGE_STAGE:
-        return stage_inputs.get("pixel_values") is not None
-    if stage_name == AUDIO_STAGE:
-        return stage_inputs.get("audio_features") is not None
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Encoder request builders
-# ---------------------------------------------------------------------------
-
-
-@dataclass
+@dataclass(kw_only=True)
 class EncoderRequestData:
     """Prepared inputs for one encoder stage forward."""
 
@@ -330,7 +72,9 @@ def apply_encoder_result(
     state.encoder_outs[stage_name] = encoder_out
 
 
-def _bounds_to_positions(bounds: Any, device: Any = None) -> torch.Tensor | None:
+def _bounds_to_positions(
+    bounds: torch.Tensor | None, device: torch.device | None = None
+) -> torch.Tensor | None:
     """Flatten ``(N, 2)`` [start, end) bound rows into a 1D position tensor."""
     if not isinstance(bounds, torch.Tensor) or bounds.numel() == 0:
         return None
@@ -346,18 +90,10 @@ def _apply_mm_pad_values(
     model_inputs: dict[str, Any],
     vocab_size: int,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
-    """Rewrite placeholder ``<unk>`` runs to per-modality pad values.
-
-    MiniCPM-o marks all placeholders with the same ``<unk>`` token; the
-    ``image_bound`` / ``audio_bounds`` intervals disambiguate modalities. The
-    base thinker runner injects embeddings by matching ``pad_values``, so we
-    rewrite the ids inside each modality's intervals to a cache-key-derived
-    pad value and record the positions.
-    """
+    """Replace shared placeholder ids with cache-key-derived modality ids."""
     pad_values: dict[str, int] = {}
     empty = torch.empty(0, dtype=torch.long)
-    # The base runner iterates image/video/audio unconditionally, so every
-    # modality needs a positions entry even when absent from the prompt.
+    # note (MayDomine): the shared runner reads positions for all three modalities.
     mm_positions: dict[str, torch.Tensor] = {
         "image": empty,
         "video": empty,
@@ -385,29 +121,19 @@ def _apply_mm_pad_values(
     return input_ids, mm_positions
 
 
-# ---------------------------------------------------------------------------
-# Thinker request builders
-# ---------------------------------------------------------------------------
-
-
 def build_sglang_thinker_request(
     state: MiniCPMOPipelineState,
     *,
     params: dict[str, Any],
-    tokenizer: Any,
+    tokenizer: PreTrainedTokenizerBase,
     vocab_size: int,
     request_id: str | None = None,
 ) -> SGLangARRequestData:
-    """Build SGLangARRequestData from pipeline state.
-
-    Constructs a SGLang Req with normalized SamplingParams, then wraps it in
-    SGLangARRequestData. MiniCPM-o uses plain 1D RoPE, so no
-    multimodal_inputs/mrope positions get attached; multimodal embeddings are
-    injected in the model runner via ``req.omni_model_inputs`` at the
-    placeholder positions derived from ``image_bound`` / ``audio_bounds``.
-    """
+    """Build a thinker request with sampling parameters and media embeddings."""
     from sglang.srt.managers.schedule_batch import Req
     from sglang.srt.sampling.sampling_params import SamplingParams
+
+    from sglang_omni.scheduling.sglang_backend.request_data import SGLangARRequestData
 
     prompt = state.prompt
     input_ids = prompt["input_ids"]
@@ -434,7 +160,7 @@ def build_sglang_thinker_request(
         repetition_penalty=params.get("repetition_penalty", 1.0),
         stop=params.get("stop") or [],
         stop_token_ids=params.get("stop_token_ids") or [],
-        sampling_seed=_resolve_seed(params),
+        sampling_seed=resolve_sampling_seed(params),
     )
     sampling_params.normalize(tokenizer)
     sampling_params.verify(vocab_size)
@@ -481,7 +207,7 @@ def apply_thinker_result(
     state: MiniCPMOPipelineState,
     *,
     stage_name: str,
-    result: Any,
+    result: SGLangARRequestData,
 ) -> ThinkerOutput:
     output_ids = list(result.output_ids)
     thinker_out: ThinkerOutput = {
@@ -501,231 +227,15 @@ def apply_thinker_result(
     return thinker_out
 
 
-# ---------------------------------------------------------------------------
-# Talker request builders
-# ---------------------------------------------------------------------------
-
-
-def build_talker_request(
-    state: MiniCPMOPipelineState,
-    *,
-    tts_bos_token_id: int,
-    tts_eos_token_id: int,
-) -> dict[str, torch.Tensor]:
-    """Slice the ``<|tts_bos|>``…``<|tts_eos|>`` span for the TTS condition.
-
-    Mirrors the remote code's tts_bound: over the full sequence (prompt +
-    generated), start = last ``<|tts_bos|>`` index + 1, end = last
-    ``<|tts_eos|>`` index (or sequence end when absent). Each position pairs
-    its token id with the thinker's last-layer hidden state at the same
-    position. ``hidden_states_seq`` entry k covers full-sequence position
-    ``prompt_len - 1 + k`` (prefill captures the last prompt position; decode
-    step k captures the position of output token k-1), so positions before
-    ``prompt_len - 1`` have no hidden state and cannot enter the span.
-    """
-    prompt = state.prompt or {}
-    input_ids = prompt.get("input_ids")
-    prompt_ids = (
-        input_ids.reshape(-1).tolist()
-        if isinstance(input_ids, torch.Tensor)
-        else list(input_ids or [])
-    )
-    thinker_out = state.thinker_out if isinstance(state.thinker_out, dict) else {}
-    output_ids = [int(t) for t in (thinker_out.get("output_ids") or [])]
-    extra = thinker_out.get("extra_model_outputs") or {}
-    hidden_seq = extra.get("hidden_states_seq") or []
-
-    full_sequence = [int(t) for t in prompt_ids] + output_ids
-    prompt_len = len(prompt_ids)
-
-    tts_bos_indices = [i for i, t in enumerate(full_sequence) if t == tts_bos_token_id]
-    tts_eos_indices = [i for i, t in enumerate(full_sequence) if t == tts_eos_token_id]
-    if not tts_bos_indices:
-        empty = torch.empty(0, dtype=torch.long)
-        return {"tts_token_ids": empty, "tts_hidden": empty}
-    start = tts_bos_indices[-1] + 1
-    end = tts_eos_indices[-1] if tts_eos_indices else len(full_sequence)
-
-    hidden_base = prompt_len - 1  # full-sequence position of hidden_seq[0]
-    if start < hidden_base:
-        raise ValueError(
-            f"tts span start {start} precedes first captured hidden position "
-            f"{hidden_base}; prompt-side spans are not supported"
-        )
-    end = min(end, hidden_base + len(hidden_seq))
-    if end <= start:
-        empty = torch.empty(0, dtype=torch.long)
-        return {"tts_token_ids": empty, "tts_hidden": empty}
-
-    tokens = torch.tensor(full_sequence[start:end], dtype=torch.long)
-    hidden = torch.stack([hidden_seq[i - hidden_base] for i in range(start, end)])
-    return {"tts_token_ids": tokens, "tts_hidden": hidden}
-
-
-def apply_talker_result(
-    state: MiniCPMOPipelineState,
-    *,
-    result: dict[str, Any],
-) -> None:
-    state.engine_outputs[TALKER_STAGE] = dict(result)
-
-
-class _MiniCPMOTalkerNullTokenizer:
-    """Tokenizer shim so SGLang's ``min_new_tokens`` stop-suppression
-    penalizer can run without a real HF tokenizer attached to the request.
-
-    Talker codes are sampled directly from the codec vocabulary and never
-    decoded to text, so the only contract this object must satisfy is the
-    attribute access performed by ``SamplingParams.normalize``/``verify`` and
-    ``BatchedMinNewTokensPenalizer`` (``eos_token_id``,
-    ``additional_stop_token_ids``). ``eos_token_id`` must be a real int: the
-    installed sglang penalizer builds ``{req.tokenizer.eos_token_id}``
-    unconditionally, and a ``None`` there crashes ``torch.tensor(...)``. The
-    codec EOS is already in ``stop_token_ids``, so the duplicate is harmless.
-    """
-
-    additional_stop_token_ids: set[int] | None = None
-
-    def __init__(self, codec_eos_id: int) -> None:
-        self.eos_token_id = int(codec_eos_id)
-
-
-def build_sglang_talker_request(
-    state: MiniCPMOPipelineState,
-    *,
-    model: Any,
-    codec_vocab_size: int,
-    codec_eos_id: int,
-    tts_bos_token_id: int,
-    tts_eos_token_id: int,
-    params: dict[str, Any],
-    request_id: str | None = None,
-) -> SGLangARRequestData:
-    """Build the SGLang AR request carrying the TTS condition embeddings.
-
-    Sampling mirrors the checkpoint's non-streaming ``tts.generate`` call
-    (``TTSSamplingParams`` defaults: temperature 0.8, top_p 0.85, top_k 25,
-    repetition_penalty 1.05 over a 16-token window, min 50 codes). Two
-    accepted divergences, verified by audio-sanity A/B: the checkpoint's
-    warpers keep ``min_tokens_to_keep=3`` and apply top_p before top_k, while
-    sglang applies top_k then top_p with no keep-floor — for k=25/p=0.85 the
-    composed keep-set differs only on extremely peaked steps.
-
-    ``sampling_params.repetition_penalty`` stays 1.0 so neither sglang's
-    native presence-based penalizer nor the base runner's applies; the real
-    windowed penalty travels in ``talker_model_inputs["rep_penalty"]`` and is
-    applied by ``MiniCPMOTalkerModelRunner``. The nonzero ``min_new_tokens``
-    keeps the request on the sync decode path (base ``lookahead_eligible``).
-    """
-    from sglang.srt.managers.schedule_batch import Req
-    from sglang.srt.sampling.sampling_params import SamplingParams
-
-    span = build_talker_request(
-        state,
-        tts_bos_token_id=tts_bos_token_id,
-        tts_eos_token_id=tts_eos_token_id,
-    )
-    tts_token_ids = span["tts_token_ids"]
-    empty_span = tts_token_ids.numel() == 0
-    if empty_span:
-        # No engine-bypass exists for a built request, so an empty span (no
-        # speakable text) runs one throwaway greedy step; the result adapter
-        # emits empty codec_tokens for it.
-        condition = model.build_condition_embeddings(tts_token_ids, span["tts_hidden"])
-        sampling_params = SamplingParams(max_new_tokens=1, temperature=0.0)
-        rep_penalty = 1.0
-    else:
-        condition = model.build_condition_embeddings(tts_token_ids, span["tts_hidden"])
-        sampling_params = SamplingParams(
-            max_new_tokens=int(params.get("talker_max_new_tokens", 2048)),
-            min_new_tokens=int(params.get("talker_min_new_tokens", 50)),
-            temperature=float(params.get("talker_temperature", 0.8)),
-            top_p=float(params.get("talker_top_p", 0.85)),
-            top_k=int(params.get("talker_top_k", 25)),
-            repetition_penalty=1.0,
-            stop_token_ids=[int(codec_eos_id)],
-            sampling_seed=_resolve_seed(params),
-        )
-        rep_penalty = float(params.get("talker_repetition_penalty", 1.05))
-    shim = _MiniCPMOTalkerNullTokenizer(codec_eos_id)
-    sampling_params.normalize(shim)
-    sampling_params.verify(codec_vocab_size)
-
-    prompt_len = int(condition.shape[0])
-    req = Req(
-        rid=request_id or "talker-req-0",
-        origin_input_text="",
-        # Dummy ids for position tracking; prefill feeds condition embeds.
-        origin_input_ids=[int(codec_eos_id)] * prompt_len,
-        sampling_params=sampling_params,
-        eos_token_ids={int(codec_eos_id)},
-        vocab_size=codec_vocab_size,
-    )
-    req.tokenizer = shim
-    req._input_embeds_are_projected = True
-    req._codec_suppress_tokens = None
-
-    data = SGLangARRequestData(
-        prefill_input_embeds=condition,
-        input_embeds_are_projected=True,
-        talker_model_inputs={"rep_penalty": rep_penalty},
-        max_new_tokens=int(sampling_params.max_new_tokens),
-        output_ids=req.output_ids,
-        req=req,
-    )
-    data.talker_model_inputs["empty_span"] = empty_span
-    return data
-
-
-def make_talker_scheduler_adapters(
-    *,
-    model: Any,
-    codec_vocab_size: int,
-    codec_eos_id: int,
-    tts_bos_token_id: int,
-    tts_eos_token_id: int,
-):
-    """Build StagePayload <-> scheduler adapters for the sglang talker."""
-
-    def request_builder(payload: StagePayload) -> SGLangARRequestData:
-        state = MiniCPMOPipelineState.from_dict(payload.data)
-        req_data = build_sglang_talker_request(
-            state,
-            model=model,
-            codec_vocab_size=codec_vocab_size,
-            codec_eos_id=codec_eos_id,
-            tts_bos_token_id=tts_bos_token_id,
-            tts_eos_token_id=tts_eos_token_id,
-            params=payload.request.params or {},
-            request_id=payload.request_id,
-        )
-        req_data.stage_payload = payload
-        return req_data
-
-    def result_adapter(data: SGLangARRequestData) -> StagePayload:
-        payload = data.stage_payload
-        state = MiniCPMOPipelineState.from_dict(payload.data)
-        if data.talker_model_inputs.get("empty_span"):
-            codec = torch.empty(0, dtype=torch.long)
-        else:
-            output_ids = [int(t) for t in data.output_ids]
-            while output_ids and output_ids[-1] == int(codec_eos_id):
-                output_ids.pop()
-            codec = torch.tensor(output_ids, dtype=torch.long)
-        # Same payload contract as the eager talker: code2wav reads
-        # engine_outputs["talker"]["codec_tokens"].
-        apply_talker_result(state, result={"codec_tokens": codec})
-        return _payload_with_state(payload, state)
-
-    return request_builder, result_adapter
-
-
 def make_thinker_scheduler_adapters(
     *,
-    tokenizer: Any,
+    tokenizer: PreTrainedTokenizerBase,
     vocab_size: int,
     stage_name: str = THINKER_STAGE,
-):
+) -> tuple[
+    Callable[[StagePayload], SGLangARRequestData],
+    Callable[[SGLangARRequestData], StagePayload],
+]:
     """Build model-specific StagePayload <-> scheduler adapters for thinker."""
 
     def request_builder(payload: StagePayload) -> SGLangARRequestData:
@@ -744,19 +254,20 @@ def make_thinker_scheduler_adapters(
         payload = data.stage_payload
         state = MiniCPMOPipelineState.from_dict(payload.data)
         apply_thinker_result(state, stage_name=stage_name, result=data)
-        return _payload_with_state(payload, state)
+        return payload_with_state(payload, state)
 
     return request_builder, result_adapter
 
 
-def make_thinker_stream_output_builder():
+def make_thinker_stream_output_builder() -> (
+    Callable[[str, SGLangARRequestData, RequestOutput], list[OutgoingMessage]]
+):
     def _build_stream_output(
-        request_id: str, req_data: Any, req_output: Any
+        request_id: str, req_data: SGLangARRequestData, req_output: RequestOutput
     ) -> list[OutgoingMessage]:
         req = getattr(req_data, "req", None)
         if req is not None and req.inflight_middle_chunks > 0:
-            # Suppress emission while chunked prefill still consumes prompt
-            # tokens; those steps carry no generated token.
+            # note (MayDomine): intermediate prefill chunks have no generated token.
             return []
         if req_output.data is None:
             return []
@@ -770,7 +281,7 @@ def make_thinker_stream_output_builder():
             return []
 
         token_id = int(req_output.data)
-        # Wrap int; stream transport only accepts tensors.
+        # note (MayDomine): stream transport accepts tensors, not scalar ids.
         return [
             OutgoingMessage(
                 request_id=request_id,
