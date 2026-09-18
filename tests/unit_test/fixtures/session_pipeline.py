@@ -152,6 +152,7 @@ async def pipeline(tmp_path, *, stage_count=2, replicated=False, list_next=False
                 replica_topology=topology.to_dict(),
             )
             process = ctx.Process(target=worker, args=(spec, ready))
+            process.expected_exitcode = 0
             process.start()
             processes.append(process)
             assert await asyncio.to_thread(ready.wait, 30)
@@ -169,7 +170,7 @@ async def pipeline(tmp_path, *, stage_count=2, replicated=False, list_next=False
             if process.is_alive():
                 process.kill()
                 process.join()
-            assert process.exitcode == getattr(process, "expected_exitcode", 0)
+            assert process.exitcode == process.expected_exitcode
         events.close()
 
 
