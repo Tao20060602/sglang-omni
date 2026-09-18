@@ -112,4 +112,3 @@ def test_minicpm_preprocessor_consumes_video_frames_and_audio(
     assert prompt_text.count("<image>./</image>") == 2
     assert prompt_text.count("<audio>./</audio>") == 2
     assert payload.request.inputs is None
-

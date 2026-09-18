@@ -68,7 +68,9 @@ def _data_uri(audio: bytes) -> str:
     return "data:audio/wav;base64," + base64.b64encode(audio).decode("ascii")
 
 
-def _payload(*, params: dict | None = None, metadata: dict | None = None) -> StagePayload:
+def _payload(
+    *, params: dict | None = None, metadata: dict | None = None
+) -> StagePayload:
     return StagePayload(
         request_id="test",
         request=OmniRequest(inputs=None, params=params or {}, metadata=metadata or {}),

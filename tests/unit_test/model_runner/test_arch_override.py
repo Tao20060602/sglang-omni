@@ -83,4 +83,3 @@ def test_thinker_pool_keeps_the_thinker_layers() -> None:
     ModelWorker._apply_arch_override(config, "Qwen3OmniThinkerForCausalLM")
     assert _pool_layers(config) == 48
     assert config.num_key_value_heads == 4
-
