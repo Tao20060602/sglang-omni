@@ -12,12 +12,16 @@ import queue
 import threading
 import time
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 import torch
 from sglang.srt.managers.schedule_batch import MultimodalDataItem, MultimodalInputFormat
 
-from sglang_omni.scheduling.pre_lm_encoder import PreLMEncoderService, QueueEntry
+from sglang_omni.scheduling.pre_lm_encoder import (
+    PreLMEncoderService,
+    QueueEntry,
+    QueueSignal,
+)
 from sglang_omni.scheduling.stage_cache import StageOutputCache
 
 if TYPE_CHECKING:
@@ -36,7 +40,6 @@ logger = logging.getLogger(__name__)
 # derived from that: 1024 entries is ~3.9 GB of host memory for large-v3
 # (3.84 MB per entry) and ~1.5 GB for base.
 _CACHE_MAX_ENTRIES = 1024
-_SHUTDOWN = object()
 
 
 def build_cache_namespace(
@@ -236,7 +239,7 @@ class WhisperPreLMEncoderService(
             if self._closed:
                 return
             self._closed = True
-            self._queue.put(_SHUTDOWN)
+            self._queue.put(QueueSignal.SHUTDOWN)
         self._thread.join(timeout=5)
 
     def _enqueue(
@@ -403,9 +406,9 @@ class WhisperPreLMEncoderService(
         self,
     ) -> tuple[list[QueueEntry[MultimodalDataItem, torch.Tensor]], bool]:
         first = self._queue.get()
-        if first is _SHUTDOWN:
+        if first is QueueSignal.SHUTDOWN:
             return [], True
-        batch = [cast(QueueEntry[MultimodalDataItem, torch.Tensor], first)]
+        batch = [first]
         deadline = time.monotonic() + self._max_batch_wait_s
         shutdown = False
         while len(batch) < self._max_batch_size:
@@ -418,10 +421,10 @@ class WhisperPreLMEncoderService(
                 )
             except queue.Empty:
                 break
-            if queued is _SHUTDOWN:
+            if queued is QueueSignal.SHUTDOWN:
                 shutdown = True
                 break
-            batch.append(cast(QueueEntry[MultimodalDataItem, torch.Tensor], queued))
+            batch.append(queued)
         return batch, shutdown
 
     def _next_batch(

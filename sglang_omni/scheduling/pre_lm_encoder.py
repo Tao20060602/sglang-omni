@@ -12,7 +12,7 @@ import time
 from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any
+from enum import Enum, auto
 
 from typing_extensions import Generic, TypeVar
 
@@ -23,6 +23,10 @@ ResultT = TypeVar("ResultT")
 HostCopyT = TypeVar("HostCopyT", default=object)
 
 logger = logging.getLogger(__name__)
+
+
+class QueueSignal(Enum):
+    SHUTDOWN = auto()
 
 
 @dataclass(slots=True)
@@ -40,7 +44,9 @@ class PreLMEncoderServiceBase(
     def __init__(self, *, worker_name: str, max_queue_size: int = 0) -> None:
         if max_queue_size < 0:
             raise ValueError(f"max_queue_size must be >= 0, got {max_queue_size}")
-        self._queue: queue.Queue[Any] = queue.Queue(maxsize=max_queue_size)
+        self._queue: queue.Queue[QueueEntry[ItemT, ResultT] | QueueSignal] = (
+            queue.Queue(maxsize=max_queue_size)
+        )
         self._worker_state_lock = threading.Lock()
         self._worker_error: Exception | None = None
         self._thread = threading.Thread(
@@ -335,4 +341,9 @@ class PreLMEncoderService(
         return embedding
 
 
-__all__ = ["PreLMEncoderService", "PreLMEncoderServiceBase", "QueueEntry"]
+__all__ = [
+    "PreLMEncoderService",
+    "PreLMEncoderServiceBase",
+    "QueueEntry",
+    "QueueSignal",
+]

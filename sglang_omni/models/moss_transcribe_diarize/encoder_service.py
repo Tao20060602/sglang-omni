@@ -130,12 +130,16 @@ class BatchedAudioEncoderService(
 
     def _drain_batch(self) -> list[QueueEntry[MultimodalDataItem, None]]:
         # note (yichi): never wait — a window costs 8~16ms at low concurrency, buys <=5ms at high.
-        batch = [self._queue.get()]
+        first = self._queue.get()
+        assert isinstance(first, QueueEntry)
+        batch = [first]
         for _ in range(self._max_batch_size - 1):
             try:
-                batch.append(self._queue.get_nowait())
+                queued = self._queue.get_nowait()
             except queue.Empty:
                 break
+            assert isinstance(queued, QueueEntry)
+            batch.append(queued)
         return batch
 
     def _next_batch(self) -> tuple[list[QueueEntry[MultimodalDataItem, None]], bool]:
