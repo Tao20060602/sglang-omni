@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sglang_omni.proto import StagePayload
 from sglang_omni.scheduling.pipeline_state import DeclarativeStateBase
 from sglang_omni.scheduling.pipeline_state import load_state as _load_pipeline_state
 from sglang_omni.scheduling.pipeline_state import store_state as _store_pipeline_state
 from sglang_omni.scheduling.pipeline_state import wire
+
+if TYPE_CHECKING:
+    import torch
 
 
 @dataclass(frozen=True)
@@ -64,7 +67,7 @@ class MossTTSState(DeclarativeStateBase):
     instructions: str | None = None
     token_count: int | None = wire(None, codec="opt_int")
     generation_kwargs: dict[str, Any] = wire(default_factory=dict, codec="dict")
-    delayed_audio_codes: Any | None = wire(None, codec="tensor_cpu")
+    delayed_audio_codes: torch.Tensor | None = wire(None, codec="tensor_cpu")
     assistant_start_length: int = wire(0, emit="truthy", codec="int")
 
 
