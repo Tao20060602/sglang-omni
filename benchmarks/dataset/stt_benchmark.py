@@ -6,10 +6,13 @@ Loader for the pipecat-ai/stt-benchmark-data dataset.
 from __future__ import annotations
 
 import atexit
+import io
 import logging
 import shutil
 import tempfile
 from pathlib import Path
+
+import soundfile as sf
 
 from benchmarks.dataset.prepare import (
     STT_BENCHMARK_DATASET_ID,
@@ -23,8 +26,7 @@ STT_BENCHMARK_SPLIT = "train"
 STT_BENCHMARK_LANG = "en"
 
 _REQUIRED_COLUMNS = {"sample_id", "audio", "transcription"}
-# Common ASR datasets (e.g. openslr/librispeech_asr) use these names instead.
-_COLUMN_ALIASES = {"id": "sample_id", "text": "transcription"}
+COLUMN_ALIASES = {"id": "sample_id", "text": "transcription"}
 
 _STAGED_CACHE: dict[
     tuple[str, str | None, str, str | None, int | None], list[SampleInput]
@@ -75,9 +77,8 @@ def load_stt_benchmark_samples(
         revision or "default",
     )
     load_kwargs = {"revision": revision} if revision else {}
-    if config_name:
-        # Only pull the requested split's parquet files; naming the config
-        # downloads its train splits too (mirrors dataset.prepare).
+    if repo_id == "openslr/librispeech_asr" and config_name:
+        # note (MayDomine): selecting files avoids downloading unused train splits.
         ds = load_dataset(
             repo_id,
             data_files={split: f"{config_name}/{split}/*.parquet"},
@@ -86,10 +87,16 @@ def load_stt_benchmark_samples(
             **load_kwargs,
         )
     else:
+        if config_name:
+            load_kwargs["name"] = config_name
         ds = load_dataset(repo_id, split=split, **load_kwargs)
-    ds = ds.rename_columns(
-        {old: new for old, new in _COLUMN_ALIASES.items() if old in ds.column_names}
-    )
+    aliases = {
+        old: new
+        for old, new in COLUMN_ALIASES.items()
+        if old in ds.column_names and new not in ds.column_names
+    }
+    if aliases:
+        ds = ds.rename_columns(aliases)
 
     missing = _REQUIRED_COLUMNS - set(ds.column_names)
     if missing:
@@ -125,11 +132,6 @@ def load_stt_benchmark_samples(
             audio_bytes = Path(audio_path).read_bytes()
 
         if audio_bytes[:4] != b"RIFF" or audio_bytes[8:12] != b"WAVE":
-            # e.g. LibriSpeech ships FLAC; transcode to PCM WAV on staging.
-            import io
-
-            import soundfile as sf
-
             waveform, sample_rate = sf.read(io.BytesIO(audio_bytes))
             sf.write(str(wav_path), waveform, sample_rate, format="WAV")
         else:

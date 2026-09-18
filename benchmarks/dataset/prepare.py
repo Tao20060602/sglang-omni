@@ -106,9 +106,8 @@ def download_dataset(
             **revision_kwargs,
         )
     elif dataset_id == "openslr/librispeech_asr" and separator:
-        # Restrict to the test parquet files; loading the config downloads
-        # the train splits too (tens of GB).
-        dataset_id, config_name = repo_id.split(":", 1)
+        # note (MayDomine): selecting files avoids downloading unused train splits.
+        config_name = split
         load_dataset(
             dataset_id,
             data_files={"test": f"{config_name}/test/*.parquet"},
@@ -117,7 +116,6 @@ def download_dataset(
             **revision_kwargs,
         )
     elif dataset_id == "lmms-lab/mmau" and separator:
-        dataset_id, split = repo_id.split(":", 1)
         load_dataset(
             dataset_id,
             split=split,
