@@ -20,6 +20,7 @@ from sglang_omni.proto.session import (
     SESSION_METADATA_KEY,
     OutputChunk,
     SessionLimits,
+    SessionOp,
     SessionRef,
     TimedChunk,
     wire_size,
@@ -36,10 +37,10 @@ class _Session:
     bindings: dict[str, int]
     limits: SessionLimits
     opened: list[str] = field(default_factory=list)
-    pending: deque = field(default_factory=deque)
+    pending: deque[tuple[TimedChunk, int]] = field(default_factory=deque)
     pending_bytes: int = 0
     pending_count: int = 0
-    outputs: deque = field(default_factory=deque)
+    outputs: deque[tuple[OutputChunk, int]] = field(default_factory=deque)
     output_bytes: int = 0
     next_input: int = 0
     next_output: int = 0
@@ -302,7 +303,7 @@ class CoordinatorSessions:
     async def session_command(
         self,
         session: _Session,
-        op: str,
+        op: SessionOp,
         *,
         owner: str | None = None,
         chunk: TimedChunk | None = None,

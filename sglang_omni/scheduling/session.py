@@ -12,6 +12,7 @@ from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.proto.session import (
     SESSION_METADATA_KEY,
     ResourceUsage,
+    SessionOp,
     SessionRef,
     TimedChunk,
     wire_size,
@@ -265,7 +266,7 @@ class SessionScheduler(SimpleScheduler):
         command = payload.request.metadata[SESSION_METADATA_KEY]
         ref = SessionRef(**command["ref"])
         key = (ref.session_id, ref.incarnation)
-        op = command["op"]
+        op: SessionOp = command["op"]
         if op == "open":
             self.open_session(ref, payload.request)
             payload.data = {"opened": True}
