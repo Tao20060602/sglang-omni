@@ -83,9 +83,9 @@ class SessionLimits:
     idle_timeout_s: float = 300.0
 
 
-def wire_size(value: Any) -> int:
-    """Return the msgpack wire size without copying a binary payload."""
-    if isinstance(value, dict) and isinstance(value.get("payload"), bytes):
+def wire_size(value: dict[str, Any]) -> int:
+    """Return the msgpack wire size of a chunk dict without copying a binary payload."""
+    if isinstance(value["payload"], bytes):
         size = len(value["payload"])
         # Note (Junnan Li): Msgpack bin headers grow by 1 byte at 256 bytes and 3 bytes at 65536.
         header_growth = 0 if size < 256 else 1 if size < 65536 else 3
