@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import logging
-
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
@@ -15,8 +13,6 @@ from sglang_omni.models.weight_loader import (
     resolve_dtype,
     resolve_model_path,
 )
-
-logger = logging.getLogger(__name__)
 
 STACKED_QKV = [
     ("self_attn.qkv_proj", "self_attn.q_proj", "q"),
@@ -153,7 +149,7 @@ class MiniCPMOImageEncoder(nn.Module):
 
         self.vision_batch_size = int(getattr(config, "vision_batch_size", 16))
 
-    def _run_vpm(
+    def run_vpm(
         self,
         pixel_values: torch.Tensor,
         patch_attn_mask: torch.Tensor,
@@ -230,7 +226,7 @@ class MiniCPMOImageEncoder(nn.Module):
             for start in range(0, batch_size, chunk):
                 end = start + chunk
                 hs.append(
-                    self._run_vpm(
+                    self.run_vpm(
                         all_pixel_values[start:end],
                         patch_attn_mask[start:end],
                         tgt_sizes[start:end],
@@ -239,7 +235,7 @@ class MiniCPMOImageEncoder(nn.Module):
                 )
             vision_embedding = torch.vstack(hs)
         else:
-            vision_embedding = self._run_vpm(
+            vision_embedding = self.run_vpm(
                 all_pixel_values, patch_attn_mask, tgt_sizes, patch_counts_cpu
             )
 

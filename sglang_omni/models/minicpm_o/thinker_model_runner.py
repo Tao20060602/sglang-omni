@@ -39,37 +39,36 @@ class MiniCPMOThinkerModelRunner(ThinkerModelRunner):
         # note (MayDomine): the thinker initializer requires a nested Qwen config.
         ModelRunner.__init__(self, tp_worker, output_processor)
 
+        # note (MayDomine): parent embedding injection reads these names.
         model = self.model
         self._outer_model = model.thinker
         self._text_model = self._outer_model.model
         self._embed_tokens = self._text_model.embed_tokens
         self._th_host_bufs = None
         self._th_slot = 0
-
-        # note (MayDomine): bound-based embedding injection needs no modality token ids.
+        # note (MayDomine): bound-based injection needs no modality token ids.
         self._image_token_id = -1
         self._video_token_id = -1
         self._audio_token_id = -1
 
-        self._capture_hidden_mode = (
+        self.capture_hidden_mode = (
             CaptureHiddenMode.FULL
             if output_processor._capture_hidden
             else get_server_return_hidden_states_mode()
         )
-
         self.pending_hidden: dict[str, list[torch.Tensor]] = {}
 
     def requested_capture_hidden_mode_prefill(
         self, schedule_batch: ScheduleBatch, requests: list[SchedulerRequest]
     ) -> CaptureHiddenMode:
         """Use deployment-wide capture; batch arguments follow the runner interface."""
-        return self._capture_hidden_mode
+        return self.capture_hidden_mode
 
     def requested_capture_hidden_mode_decode(
         self, schedule_batch: ScheduleBatch, requests: list[SchedulerRequest]
     ) -> CaptureHiddenMode:
         """Use deployment-wide capture; batch arguments follow the runner interface."""
-        return self._capture_hidden_mode
+        return self.capture_hidden_mode
 
     def post_process_outputs(
         self,

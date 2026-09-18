@@ -39,7 +39,7 @@ class MiniCPMOTalkerForCausalLM(nn.Module):
         prefix: str = "",
     ) -> None:
         super().__init__()
-        tts_config = getattr(config, "tts_config", None)
+        tts_config = config.tts_config
         if tts_config is None:
             raise ValueError("MiniCPM-o talker requires config.tts_config")
         if not isinstance(tts_config, dict):

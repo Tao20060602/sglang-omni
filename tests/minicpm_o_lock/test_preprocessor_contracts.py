@@ -43,7 +43,7 @@ def test_openai_image_url_parts_are_dropped_from_text() -> None:
             ],
         }
     ]
-    normalized = MiniCPMOPreprocessor._normalize_message_contents(messages)
+    normalized = MiniCPMOPreprocessor.normalize_message_contents(messages)
     assert normalized == [{"role": "user", "content": "describe this"}]
 
 
@@ -53,7 +53,7 @@ def test_media_placeholders_are_prepended_to_the_last_user_turn() -> None:
         {"role": "system", "content": "sys"},
         {"role": "user", "content": "look"},
     ]
-    rewritten = preprocessor._messages_with_media_placeholders(
+    rewritten = preprocessor.messages_with_media_placeholders(
         messages, num_images=2, num_audios=1
     )
     assert rewritten[0] == {"role": "system", "content": "sys"}
@@ -77,9 +77,9 @@ def test_tts_template_requires_speech_pipeline_and_audio_output() -> None:
         request=OmniRequest(inputs=None, metadata={"output_modalities": ["text"]}),
         data=None,
     )
-    assert speech._use_tts_template(audio_payload) is True
-    assert speech._use_tts_template(text_payload) is False
-    assert text._use_tts_template(audio_payload) is False
+    assert speech.should_use_tts_template(audio_payload) is True
+    assert speech.should_use_tts_template(text_payload) is False
+    assert text.should_use_tts_template(audio_payload) is False
 
 
 @pytest.mark.parametrize(
@@ -93,7 +93,7 @@ def test_transcription_prompt_follows_request_language(language: str, prompt: st
         request=OmniRequest(inputs=None, params={"language": language}),
         data=None,
     )
-    messages, audios = preprocessor._speech_to_text_inputs(
+    messages, audios = preprocessor.speech_to_text_inputs(
         payload, {"audio_bytes": pcm16_wav_bytes()}
     )
     assert messages == [{"role": "user", "content": prompt}]

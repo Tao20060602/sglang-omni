@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import logging
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,8 +14,6 @@ from sglang_omni.models.weight_loader import (
     resolve_dtype,
     resolve_model_path,
 )
-
-logger = logging.getLogger(__name__)
 
 # note (MayDomine): finite mask values avoid NaNs on fully masked padding rows.
 MASK_MIN = -1e9
@@ -42,14 +38,14 @@ def _chunked_causal_mask(
 
 
 def _feature_lens_after_conv(input_lengths: torch.Tensor) -> torch.Tensor:
-    """Valid frame counts after the encoder's stride-2 ``conv2``."""
+    """Valid frame counts after the encoder's stride-2 conv2."""
     return (input_lengths - 1) // 2 + 1
 
 
 def _feature_lens_after_pooling(
     input_lengths: torch.Tensor, pool_step: int
 ) -> torch.Tensor:
-    """Valid frame counts after ``pooling``."""
+    """Valid frame counts after pooling."""
     after_cnn = _feature_lens_after_conv(input_lengths)
     after_pool = (after_cnn - pool_step) // pool_step + 1
     return after_pool.to(dtype=torch.int32)
@@ -74,7 +70,7 @@ class MiniCPMWhisperEncoderAttention(nn.Module):
             self.qkv_proj.bias[self.embed_dim : 2 * self.embed_dim].zero_()
         self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
-    def _shape(self, states: torch.Tensor) -> torch.Tensor:
+    def reshape_heads(self, states: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, _ = states.shape
         return states.view(
             batch_size, seq_len, self.num_heads, self.head_dim
@@ -85,9 +81,9 @@ class MiniCPMWhisperEncoderAttention(nn.Module):
     ) -> torch.Tensor:
         query, key, value = self.qkv_proj(hidden_states).chunk(3, dim=-1)
         attn_output = F.scaled_dot_product_attention(
-            self._shape(query),
-            self._shape(key),
-            self._shape(value),
+            self.reshape_heads(query),
+            self.reshape_heads(key),
+            self.reshape_heads(value),
             attn_mask=attn_mask,
             dropout_p=0.0,
         )
@@ -238,7 +234,7 @@ class MiniCPMOAudioEncoder(nn.Module):
         self.chunk_num_frame = int(float(config.audio_chunk_length) * 50)
         self.chunk_mask_cache: tuple[int, torch.Tensor] | None = None
 
-    def _cached_chunk_mask(self, size: int) -> torch.Tensor:
+    def cached_chunk_mask(self, size: int) -> torch.Tensor:
         if self.chunk_mask_cache is None or self.chunk_mask_cache[0] != size:
             self.chunk_mask_cache = (
                 size,
@@ -288,7 +284,7 @@ class MiniCPMOAudioEncoder(nn.Module):
         seq_range = torch.arange(max_seq_len, device=self.device)
         lens_after_conv = _feature_lens_after_conv(lens)
         valid = seq_range[None, :] < lens_after_conv[:, None]
-        allowed = self._cached_chunk_mask(max_seq_len)[None, :, :] & valid[:, None, :]
+        allowed = self.cached_chunk_mask(max_seq_len)[None, :, :] & valid[:, None, :]
         attn_mask = torch.where(allowed, 0.0, MASK_MIN).to(self.dtype)
         attn_mask = attn_mask.unsqueeze(1)
 

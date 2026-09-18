@@ -199,10 +199,12 @@ def apply_thinker_result(
         "extra_model_outputs": dict(result.extra_model_outputs),
     }
 
-    for attr in ("finish_reason", "weight_version", "output_token_logprobs"):
-        value = getattr(result, attr, None)
-        if value is not None:
-            thinker_out[attr] = value
+    if result.finish_reason is not None:
+        thinker_out["finish_reason"] = result.finish_reason
+    if result.weight_version is not None:
+        thinker_out["weight_version"] = result.weight_version
+    if result.output_token_logprobs is not None:
+        thinker_out["output_token_logprobs"] = result.output_token_logprobs
 
     state.thinker_out = thinker_out
     state.engine_outputs[stage_name] = thinker_out

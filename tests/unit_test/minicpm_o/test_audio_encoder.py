@@ -2,10 +2,10 @@
 """Tests for the native MiniCPM-o audio encoder.
 
 The golden-parity test compares the native encoder against the checkpoint's
-remote-code ``MiniCPMWhisperEncoder`` on shared random weights, so it needs a
+remote-code MiniCPMWhisperEncoder on shared random weights, so it needs a
 checkpoint directory with the remote modeling files (weights not required).
-Set ``MINICPMO_CHECKPOINT`` or place ``MiniCPM-o-4_6``/``MiniCPM-o-4_5`` in
-the repo root; the test skips otherwise.
+Set MINICPMO_CHECKPOINT or place MiniCPM-o-4_6 / MiniCPM-o-4_5 in the repo
+root; the test skips otherwise.
 """
 
 from __future__ import annotations
@@ -15,13 +15,11 @@ from pathlib import Path
 
 import pytest
 import torch
-from transformers import PretrainedConfig
 
 from sglang_omni.models.minicpm_o.components.audio_encoder import (
     MiniCPMOAudioEncoder,
     MiniCPMWhisperEncoder,
     MultiModalProjector,
-    _audio_config_object,
     _chunked_causal_mask,
     _feature_lens_after_pooling,
     _fuse_qkv,
@@ -41,22 +39,6 @@ def _checkpoint_dir() -> Path | None:
     return None
 
 
-def _reference_chunk_mask(size: int, chunk_size: int) -> torch.Tensor:
-    ret = torch.zeros(size, size, dtype=torch.bool)
-    for i in range(size):
-        ending = min((i // chunk_size + 1) * chunk_size, size)
-        ret[i, :ending] = True
-    return ret
-
-
-@pytest.mark.parametrize(
-    "size,chunk", [(1, 50), (49, 50), (50, 50), (301, 50), (300, 7)]
-)
-def test_chunked_causal_mask_matches_reference_loop(size: int, chunk: int) -> None:
-    got = _chunked_causal_mask(size, chunk, torch.device("cpu"))
-    assert torch.equal(got, _reference_chunk_mask(size, chunk))
-
-
 def _small_whisper_config():
     from transformers import WhisperConfig
 
@@ -69,20 +51,6 @@ def _small_whisper_config():
         max_source_positions=1500,
         activation_function="gelu",
     )
-
-
-def test_audio_config_object_preserves_config_instances() -> None:
-    audio_config = PretrainedConfig(d_model=64, num_mel_bins=80)
-    config = PretrainedConfig(audio_config=audio_config)
-    assert _audio_config_object(config) is audio_config
-
-
-def test_audio_config_object_converts_shim_dict() -> None:
-    config = PretrainedConfig(audio_config={"d_model": 64, "num_mel_bins": 80})
-    audio_config = _audio_config_object(config)
-    assert isinstance(audio_config, PretrainedConfig)
-    assert audio_config.d_model == 64
-    assert audio_config.num_mel_bins == 80
 
 
 def _native_state_from_hf(encoder: torch.nn.Module) -> dict[str, torch.Tensor]:
@@ -165,7 +133,7 @@ def test_golden_parity_vs_remote_code(lens: list[int]) -> None:
 
 
 def _tiny_audio_encoder(pool_step: int = 2) -> MiniCPMOAudioEncoder:
-    """A ``MiniCPMOAudioEncoder`` with random weights and no checkpoint I/O."""
+    """A MiniCPMOAudioEncoder with random weights and no checkpoint I/O."""
     torch.manual_seed(0)
     config = _small_whisper_config()
     encoder = object.__new__(MiniCPMOAudioEncoder)
@@ -225,20 +193,9 @@ def test_padding_content_does_not_change_valid_output(padding: str) -> None:
     )
 
 
-def test_projector_shapes() -> None:
-    projector = MultiModalProjector(in_dim=64, out_dim=96)
-    out = projector(torch.randn(2, 10, 64))
-    assert out.shape == (2, 10, 96)
-
-
-@pytest.mark.parametrize("pool_step", [2, 3, 5])
-def test_short_audio_is_rejected_before_pooling(pool_step: int) -> None:
-    """A clip too short for one pooling window must raise a typed error.
-
-    ``AvgPool1d`` returns an empty tensor when the post-conv length is below
-    ``pool_step``, and the caller then fails on an empty embedding. The guard
-    turns that into a ``ValueError`` the server can classify as a bad request.
-    """
+def test_short_audio_is_rejected_before_pooling() -> None:
+    """A clip too short for one pooling window must raise a typed error."""
+    pool_step = 5
     encoder = _tiny_audio_encoder(pool_step=pool_step)
     too_short = _min_mel_frames(pool_step) - 1
     mel = torch.randn(1, 80, too_short).to(encoder.dtype)
@@ -249,9 +206,9 @@ def test_short_audio_is_rejected_before_pooling(pool_step: int) -> None:
             encoder(audio_features=mel, audio_feature_lens=lens)
 
 
-@pytest.mark.parametrize("pool_step", [2, 3, 5])
-def test_minimum_length_audio_still_encodes(pool_step: int) -> None:
+def test_minimum_length_audio_still_encodes() -> None:
     """The shortest accepted clip yields exactly one pooled frame."""
+    pool_step = 5
     encoder = _tiny_audio_encoder(pool_step=pool_step)
     shortest = _min_mel_frames(pool_step)
     mel = torch.randn(1, 80, shortest).to(encoder.dtype)

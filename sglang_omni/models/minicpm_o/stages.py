@@ -169,17 +169,11 @@ def create_sglang_talker_executor_from_config(
     )
 
     logger.info(
-        "sglang_ar_startup stage=talker gpu_id=%s tp_rank=%s/%s "
-        "context_length=%s total_gpu_memory_fraction=%s mem_fraction_static=%s "
-        "pre_load_avail_mem=%s pid=%s",
-        gpu_id,
-        tp_rank,
-        tp_size,
-        max_seq_len,
-        total_gpu_memory_fraction,
-        resolved_view(server_args).mem_fraction_static,
-        avail_gpu_mem(gpu_id),
-        os.getpid(),
+        f"sglang_ar_startup stage=talker gpu_id={gpu_id} "
+        f"tp_rank={tp_rank}/{tp_size} context_length={max_seq_len} "
+        f"total_gpu_memory_fraction={total_gpu_memory_fraction} "
+        f"mem_fraction_static={resolved_view(server_args).mem_fraction_static} "
+        f"pre_load_avail_mem={avail_gpu_mem(gpu_id)} pid={os.getpid()}"
     )
     scheduler = create_talker_scheduler(
         server_args,
@@ -189,10 +183,8 @@ def create_sglang_talker_executor_from_config(
         total_gpu_memory_fraction=total_gpu_memory_fraction,
     )
     logger.info(
-        "sglang_ar_started stage=talker gpu_id=%s post_load_avail_mem=%s pid=%s",
-        gpu_id,
-        avail_gpu_mem(gpu_id),
-        os.getpid(),
+        f"sglang_ar_started stage=talker gpu_id={gpu_id} "
+        f"post_load_avail_mem={avail_gpu_mem(gpu_id)} pid={os.getpid()}"
     )
     return scheduler
 
@@ -295,17 +287,11 @@ def create_sglang_thinker_executor_from_config(
     )
 
     logger.info(
-        "sglang_ar_startup stage=thinker gpu_id=%s tp_rank=%s/%s "
-        "context_length=%s total_gpu_memory_fraction=%s mem_fraction_static=%s "
-        "pre_load_avail_mem=%s pid=%s",
-        gpu_id,
-        tp_rank,
-        tp_size,
-        max_seq_len,
-        total_gpu_memory_fraction,
-        resolved_view(server_args).mem_fraction_static,
-        avail_gpu_mem(gpu_id),
-        os.getpid(),
+        f"sglang_ar_startup stage=thinker gpu_id={gpu_id} "
+        f"tp_rank={tp_rank}/{tp_size} context_length={max_seq_len} "
+        f"total_gpu_memory_fraction={total_gpu_memory_fraction} "
+        f"mem_fraction_static={resolved_view(server_args).mem_fraction_static} "
+        f"pre_load_avail_mem={avail_gpu_mem(gpu_id)} pid={os.getpid()}"
     )
     scheduler = create_thinker_scheduler(
         server_args,
@@ -318,9 +304,7 @@ def create_sglang_thinker_executor_from_config(
         speech_enabled=speech_enabled,
     )
     logger.info(
-        "sglang_ar_started stage=thinker gpu_id=%s post_load_avail_mem=%s pid=%s",
-        gpu_id,
-        avail_gpu_mem(gpu_id),
-        os.getpid(),
+        f"sglang_ar_started stage=thinker gpu_id={gpu_id} "
+        f"post_load_avail_mem={avail_gpu_mem(gpu_id)} pid={os.getpid()}"
     )
     return scheduler

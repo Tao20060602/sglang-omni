@@ -34,7 +34,7 @@ _STAGED_CACHE: dict[
 
 
 def _staged_wav_path(staging_root: Path, sample_id: str, *, repo_id: str) -> Path:
-    """Return ``<staging_root>/<sample_id>.wav`` after rejecting unsafe ids."""
+    """Return <staging_root>/<sample_id>.wav after rejecting unsafe ids."""
     error_prefix = f"Invalid sample_id for {repo_id}: {sample_id!r}"
     if not isinstance(sample_id, str) or not sample_id.strip():
         raise ValueError(f"{error_prefix} (empty id)")
@@ -70,11 +70,8 @@ def load_stt_benchmark_samples(
     from datasets import Audio, load_dataset
 
     logger.info(
-        "Loading %s config=%s split=%s revision=%s from HuggingFace ...",
-        repo_id,
-        config_name or "default",
-        split,
-        revision or "default",
+        f"Loading {repo_id} config={config_name or 'default'} "
+        f"split={split} revision={revision or 'default'} from HuggingFace ..."
     )
     load_kwargs = {"revision": revision} if revision else {}
     if repo_id == "openslr/librispeech_asr" and config_name:
@@ -110,7 +107,7 @@ def load_stt_benchmark_samples(
 
     tmpdir = Path(tempfile.mkdtemp(prefix=f"stt_benchmark_{split}_"))
     atexit.register(shutil.rmtree, str(tmpdir), True)
-    logger.info("Staging audio to %s", tmpdir)
+    logger.info(f"Staging audio to {tmpdir}")
     staging_root = tmpdir.resolve()
 
     samples: list[SampleInput] = []
@@ -148,5 +145,5 @@ def load_stt_benchmark_samples(
         )
 
     _STAGED_CACHE[cache_key] = samples
-    logger.info("Loaded %d samples from %s/%s", len(samples), repo_id, split)
+    logger.info(f"Loaded {len(samples)} samples from {repo_id}/{split}")
     return list(samples)

@@ -312,7 +312,7 @@ def _extract_audio_from_path(video_path: Path, target_sr: int) -> np.ndarray | N
         audio = librosa.to_mono(np.concatenate(frames, axis=1))
         return librosa.resample(audio, orig_sr=sample_rate, target_sr=target_sr)
     except (av.FFmpegError, ValueError) as exc:
-        logger.warning("Failed to extract audio from %s: %s", video_path, exc)
+        logger.warning(f"Failed to extract audio from {video_path}: {exc}")
         return None
 
 
@@ -346,7 +346,7 @@ def load_video_path(
                 f"Failed to decode video path={path}; torchvision failed with "
                 f"{type(backend_exc).__name__}: {backend_exc}"
             ) from backend_exc
-        logger.warning("Video reader %s failed, falling back to torchvision", backend)
+        logger.warning(f"Video reader {backend} failed, falling back to torchvision")
         try:
             video, sample_fps = qwen_vision.VIDEO_READER_BACKENDS["torchvision"](ele)
         except Exception as fallback_exc:
@@ -413,7 +413,7 @@ def compute_video_cache_key(
     Decode params change the resulting frame count and thus the encoder
     output length. They must be part of the cache key — otherwise an entry
     produced under one (fps, max_frames, pixel-limit) tuple could be
-    returned for a request with different params, yielding ``video_embeds``
+    returned for a request with different params, yielding video_embeds
     whose length no longer matches the prompt placeholders.
     """
     base = compute_media_cache_key(videos, prefix="video")

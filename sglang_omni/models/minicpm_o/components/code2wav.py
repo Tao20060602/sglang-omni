@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -18,8 +17,6 @@ from sglang_omni.preprocessing.cache_key import hash_bytes, reference_path_cache
 
 if TYPE_CHECKING:
     from sglang_omni.models.minicpm_o.components.token2wav.vocoder import SpeakerPrompt
-
-logger = logging.getLogger(__name__)
 
 OUTPUT_SAMPLE_RATE = 24000
 
@@ -79,10 +76,10 @@ class MiniCPMOCode2Wav(nn.Module):
             }
         with self.device_context:
             reference = self.default_prompt_wav if prompt_wav is None else prompt_wav
-            waveform = self._vocode(tokens, reference)
+            waveform = self.vocode(tokens, reference)
         return {"waveform": waveform, "sample_rate": OUTPUT_SAMPLE_RATE}
 
-    def _get_prompt(self, prompt_wav: str | bytes | None) -> SpeakerPrompt:
+    def speaker_prompt(self, prompt_wav: str | bytes | None) -> SpeakerPrompt:
         if prompt_wav is None:
             raise ValueError("No speaker-reference audio supplied or default available")
         prompt_key = (
@@ -107,7 +104,7 @@ class MiniCPMOCode2Wav(nn.Module):
             self.prompt_cache_key = prompt_key
         return t2w.cache
 
-    def _vocode(self, tokens: list[int], prompt_wav: str | bytes | None) -> np.ndarray:
+    def vocode(self, tokens: list[int], prompt_wav: str | bytes | None) -> np.ndarray:
         """Return the waveform directly, avoiding the vocoder's file encoder."""
         t2w = self.token2wav
         (
@@ -115,7 +112,7 @@ class MiniCPMOCode2Wav(nn.Module):
             prompt_speech_tokens_lens,
             spk_emb,
             prompt_mels,
-        ) = self._get_prompt(prompt_wav)
+        ) = self.speaker_prompt(prompt_wav)
 
         speech_tokens = torch.tensor([tokens], dtype=torch.int32, device=t2w.device)
         speech_tokens_lens = torch.tensor(

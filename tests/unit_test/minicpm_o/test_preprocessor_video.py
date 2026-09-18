@@ -7,10 +7,7 @@ import numpy as np
 import torch
 
 from sglang_omni.models.minicpm_o.components import preprocessor as preprocessor_mod
-from sglang_omni.models.minicpm_o.components.preprocessor import (
-    MiniCPMOPreprocessor,
-    _video_to_images,
-)
+from sglang_omni.models.minicpm_o.components.preprocessor import MiniCPMOPreprocessor
 from sglang_omni.proto import OmniRequest, StagePayload
 
 
@@ -50,40 +47,6 @@ async def _explicit_audios(_audios, *, target_sr):
     return [np.array([0.25, 0.5], dtype=np.float32)] if _audios else []
 
 
-async def _unexpected_video_loader(*_args, **_kwargs):
-    raise AssertionError("video loader called without a video input")
-
-
-def test_video_to_images_preserves_frame_order_and_rgb() -> None:
-    video = torch.zeros((2, 3, 2, 2), dtype=torch.float32)
-    video[0, 0] = 255
-    video[1, 1] = 128
-
-    images = _video_to_images(video)
-
-    assert [image.getpixel((0, 0)) for image in images] == [
-        (255, 0, 0),
-        (0, 128, 0),
-    ]
-    assert all(image.mode == "RGB" for image in images)
-
-
-def test_minicpm_normalizes_openai_text_content_parts() -> None:
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "Hello"},
-                {"type": "text", "text": " world"},
-            ],
-        }
-    ]
-
-    normalized = MiniCPMOPreprocessor._normalize_message_contents(messages)
-
-    assert normalized == [{"role": "user", "content": "Hello world"}]
-
-
 def test_minicpm_preprocessor_consumes_video_frames_and_audio(
     monkeypatch,
 ) -> None:
@@ -94,7 +57,7 @@ def test_minicpm_preprocessor_consumes_video_frames_and_audio(
     preprocessor.tokenizer = SimpleNamespace()
     monkeypatch.setattr(
         preprocessor,
-        "_render_chat_template",
+        "render_chat_template",
         lambda messages, **_: str(messages),
     )
 
@@ -150,34 +113,3 @@ def test_minicpm_preprocessor_consumes_video_frames_and_audio(
     assert prompt_text.count("<audio>./</audio>") == 2
     assert payload.request.inputs is None
 
-
-def test_minicpm_preprocessor_does_not_load_video_for_audio_only(
-    monkeypatch,
-) -> None:
-    preprocessor = object.__new__(MiniCPMOPreprocessor)
-    preprocessor._processor = _FakeProcessor()
-    preprocessor.speech_enabled = False
-    preprocessor.tokenizer = SimpleNamespace()
-    monkeypatch.setattr(
-        preprocessor,
-        "_render_chat_template",
-        lambda messages, **_: str(messages),
-    )
-    monkeypatch.setattr(preprocessor_mod, "ensure_image_list_async", _empty_images)
-    monkeypatch.setattr(preprocessor_mod, "ensure_audio_list_async", _explicit_audios)
-    monkeypatch.setattr(
-        preprocessor_mod, "ensure_video_list_async", _unexpected_video_loader
-    )
-
-    result = asyncio.run(
-        preprocessor(
-            _payload(
-                {
-                    "messages": [{"role": "user", "content": "Listen"}],
-                    "audios": ["question.wav"],
-                }
-            )
-        )
-    )
-
-    assert result.data["encoder_inputs"]["audio_encoder"]

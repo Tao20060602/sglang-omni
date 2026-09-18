@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -31,8 +30,6 @@ from sglang_omni.proto import StagePayload
 if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
-logger = logging.getLogger(__name__)
-
 IMAGE_PLACEHOLDER = "<image>./</image>"
 AUDIO_PLACEHOLDER = "<audio>./</audio>"
 
@@ -53,7 +50,7 @@ def _first_batch_item(value: Any) -> Any:
 
 
 def _video_to_images(video: Any) -> list[Image.Image]:
-    """Convert one decoded video ``(T, C, H, W)`` tensor to RGB frames."""
+    """Convert one decoded video (T, C, H, W) tensor to RGB frames."""
     if isinstance(video, list) and all(
         isinstance(frame, Image.Image) for frame in video
     ):
@@ -96,7 +93,7 @@ class MiniCPMOPreprocessor:
         self._processor = None
         self.speech_enabled = speech_enabled
 
-    def _speech_to_text_inputs(
+    def speech_to_text_inputs(
         self, payload: StagePayload, inputs: dict[str, Any]
     ) -> tuple[list[dict[str, Any]], list[Any]]:
         """Turn a transcription upload into a chat turn plus audio list."""
@@ -106,7 +103,7 @@ class MiniCPMOPreprocessor:
         audio, _ = AudioMediaIO(target_sr=16000).load_bytes(inputs["audio_bytes"])
         return [{"role": "user", "content": prompt}], [audio]
 
-    def _use_tts_template(self, payload: StagePayload) -> bool:
+    def should_use_tts_template(self, payload: StagePayload) -> bool:
         return self.speech_enabled and should_generate_audio_output(payload)
 
     @property
@@ -124,7 +121,7 @@ class MiniCPMOPreprocessor:
         raw_videos = None
         video_params: dict[str, Any] = {}
         if isinstance(inputs, dict) and inputs.get("audio_bytes") is not None:
-            messages, raw_audios = self._speech_to_text_inputs(payload, inputs)
+            messages, raw_audios = self.speech_to_text_inputs(payload, inputs)
         elif isinstance(inputs, dict):
             messages = inputs.get("messages", [])
             raw_images = inputs.get("images")
@@ -145,7 +142,7 @@ class MiniCPMOPreprocessor:
             messages = inputs
 
         if raw_images or raw_audios or raw_videos:
-            return await self._preprocess_multimodal(
+            return await self.preprocess_multimodal(
                 payload,
                 messages,
                 raw_images=raw_images,
@@ -163,8 +160,8 @@ class MiniCPMOPreprocessor:
             prompt_text = ""
             input_ids = torch.tensor(messages, dtype=torch.long)
         else:
-            prompt_text = self._render_chat_template(
-                messages, use_tts_template=self._use_tts_template(payload)
+            prompt_text = self.render_chat_template(
+                messages, use_tts_template=self.should_use_tts_template(payload)
             )
             encoded = self.tokenizer(prompt_text, return_tensors="pt")
             input_ids = encoded["input_ids"][0].to(dtype=torch.long)
@@ -182,12 +179,12 @@ class MiniCPMOPreprocessor:
         payload.request.inputs = None
         return payload
 
-    def _render_chat_template(
+    def render_chat_template(
         self, messages: Any, *, use_tts_template: bool = False
     ) -> str:
         if isinstance(messages, str):
             return messages
-        messages = self._normalize_message_contents(messages)
+        messages = self.normalize_message_contents(messages)
         return self.tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
@@ -196,7 +193,7 @@ class MiniCPMOPreprocessor:
         )
 
     @staticmethod
-    def _normalize_message_contents(messages: Any) -> Any:
+    def normalize_message_contents(messages: Any) -> Any:
         """Convert OpenAI text-part content to the string form expected by MiniCPM."""
         if not isinstance(messages, list):
             return messages
@@ -215,7 +212,7 @@ class MiniCPMOPreprocessor:
             normalized.append({**message, "content": content})
         return normalized
 
-    def _messages_with_media_placeholders(
+    def messages_with_media_placeholders(
         self,
         messages: list[dict[str, Any]],
         *,
@@ -224,7 +221,7 @@ class MiniCPMOPreprocessor:
     ) -> list[dict[str, Any]]:
         """Prepend media placeholders to the last user message."""
         result: list[dict[str, Any]] = []
-        messages = self._normalize_message_contents(messages)
+        messages = self.normalize_message_contents(messages)
         for i, msg in enumerate(messages):
             if i == len(messages) - 1 and msg.get("role", "user") == "user":
                 parts = (
@@ -237,7 +234,7 @@ class MiniCPMOPreprocessor:
                 result.append(msg)
         return result
 
-    async def _preprocess_multimodal(
+    async def preprocess_multimodal(
         self,
         payload: StagePayload,
         messages: Any,
@@ -278,12 +275,12 @@ class MiniCPMOPreprocessor:
         if isinstance(messages, list) and not (
             messages and all(isinstance(token, int) for token in messages)
         ):
-            messages = self._messages_with_media_placeholders(
+            messages = self.messages_with_media_placeholders(
                 messages, num_images=len(images), num_audios=len(audios)
             )
-        prompt_text = self._render_chat_template(
+        prompt_text = self.render_chat_template(
             messages,
-            use_tts_template=bool(audios) or self._use_tts_template(payload),
+            use_tts_template=bool(audios) or self.should_use_tts_template(payload),
         )
 
         processed = self.processor(

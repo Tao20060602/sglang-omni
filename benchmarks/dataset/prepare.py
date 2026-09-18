@@ -66,7 +66,7 @@ def download_dataset(
     revision: str | None = None,
     quiet: bool = False,
 ) -> None:
-    """Pre-warm the HuggingFace ``datasets`` cache for *repo_id*."""
+    """Pre-warm the HuggingFace datasets cache for *repo_id*."""
     from datasets import get_dataset_config_names, load_dataset
     from huggingface_hub import hf_hub_download
 
@@ -82,10 +82,9 @@ def download_dataset(
     revision_kwargs = {"revision": revision} if revision else {}
     if not quiet:
         logger.info(
-            "Pre-warming HuggingFace cache for %s split=%s revision=%s ...",
-            dataset_id,
-            split if separator else "all",
-            revision or "default",
+            f"Pre-warming HuggingFace cache for {dataset_id} "
+            f"split={split if separator else 'all'} "
+            f"revision={revision or 'default'} ..."
         )
 
     if dataset_id == "MMMU/MMMU":
