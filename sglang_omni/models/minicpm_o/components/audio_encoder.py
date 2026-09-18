@@ -278,6 +278,12 @@ class MiniCPMOAudioEncoder(nn.Module):
         _, _, max_mel_seq_len = wavforms.shape
         max_seq_len = (max_mel_seq_len - 1) // 2 + 1
 
+        # note (MayDomine): convolution sees padding before the attention mask does.
+        mel_range = torch.arange(max_mel_seq_len, device=self._device)
+        wavforms = wavforms.masked_fill(
+            mel_range[None, None, :] >= lens[:, None, None], 0.0
+        )
+
         # note (MayDomine): validity lengths must account for convolution stride.
         seq_range = torch.arange(max_seq_len, device=self._device)
         lens_after_conv = _feature_lens_after_conv(lens)

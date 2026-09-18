@@ -183,14 +183,9 @@ def _tiny_audio_encoder(pool_step: int = 2) -> MiniCPMOAudioEncoder:
     return encoder
 
 
-def test_padding_content_does_not_change_valid_output() -> None:
-    """A short row's embeddings must not depend on the batch's padding.
-
-    Encode the same short mel twice in batches of equal shape that differ only
-    in the padding content of the short row. ``seq_range`` indexes the
-    post-conv sequence, so a validity bound taken from the raw mel lengths
-    admits padding frames as attention keys and the two runs disagree.
-    """
+@pytest.mark.parametrize("padding", ["random", "nan"])
+def test_padding_content_does_not_change_valid_output(padding: str) -> None:
+    """Padding must affect neither valid embeddings nor the caller's input."""
     encoder = _tiny_audio_encoder()
     short_len, long_len = 137, 3000
 
@@ -208,9 +203,15 @@ def test_padding_content_does_not_change_valid_output() -> None:
 
         torch.manual_seed(2)
         polluted_mel = padded_mel.clone()
-        polluted_mel[1, :, short_len:] = torch.randn(80, long_len - short_len)
+        polluted_mel[1, :, short_len:] = (
+            torch.randn(80, long_len - short_len) if padding == "random" else torch.nan
+        )
+        original_mel = polluted_mel.clone()
         polluted = encoder(audio_features=polluted_mel, audio_feature_lens=lens)
 
+    torch.testing.assert_close(
+        polluted_mel, original_mel, rtol=0, atol=0, equal_nan=True
+    )
     pooled_short = int(
         _feature_lens_after_pooling(torch.tensor([short_len]), encoder.audio_pool_step)
     )
