@@ -18,8 +18,8 @@ import logging
 import queue as queue_mod
 import threading
 import time
-from collections.abc import Coroutine
-from typing import Any, Callable
+from collections.abc import Coroutine, Sequence
+from typing import Callable
 
 from typing_extensions import Generic, TypeVar
 
@@ -56,7 +56,7 @@ class StreamingSimpleScheduler(Generic[StreamingInputT]):
         batch_compute_fn: (
             Callable[
                 [list[StreamingInputT]],
-                list[Any] | Coroutine[object, None, list[Any]],
+                Sequence[object] | Coroutine[object, None, Sequence[object]],
             ]
             | None
         ) = None,

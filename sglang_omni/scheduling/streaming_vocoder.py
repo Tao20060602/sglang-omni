@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from typing import Any
 
 import torch
@@ -112,7 +112,7 @@ class StreamingVocoderBase(
         batch_compute_fn: (
             Callable[
                 [list[StagePayload]],
-                list[Any] | Coroutine[object, None, list[Any]],
+                Sequence[object] | Coroutine[object, None, Sequence[object]],
             ]
             | None
         ) = None,
