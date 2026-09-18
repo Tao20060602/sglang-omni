@@ -9,7 +9,7 @@ import uuid
 from collections import deque
 from collections.abc import Coroutine
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, AsyncIterator, Callable, Literal
+from typing import Any, AsyncIterator, Callable, Literal, TypeVar
 
 import msgpack
 
@@ -24,6 +24,8 @@ from sglang_omni.proto.session import (
     TimedChunk,
     wire_size,
 )
+
+TaskResult = TypeVar("TaskResult")
 
 
 @dataclass
@@ -66,7 +68,9 @@ class CoordinatorSessions:
         self.session_stream_handlers: dict[str, Callable[[StreamMessage], None]] = {}
         self.session_cleanup_tasks: set[asyncio.Task] = set()
 
-    def owned_session_task(self, coroutine) -> asyncio.Task:
+    def owned_session_task(
+        self, coroutine: Coroutine[Any, Any, TaskResult]
+    ) -> asyncio.Task[TaskResult]:
         task = asyncio.create_task(coroutine)
         self.session_cleanup_tasks.add(task)
         task.add_done_callback(self.session_task_done)

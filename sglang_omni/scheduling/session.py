@@ -16,7 +16,7 @@ from sglang_omni.proto.session import (
     TimedChunk,
     wire_size,
 )
-from sglang_omni.scheduling.messages import OutgoingMessage
+from sglang_omni.scheduling.messages import IncomingMessage, OutgoingMessage
 from sglang_omni.scheduling.simple_scheduler import SimpleScheduler
 
 
@@ -75,11 +75,16 @@ class _Order:
 
 
 class _SessionInbox(queue.Queue):
-    def __init__(self, register):
+    def __init__(self, register: Callable[[IncomingMessage], None]) -> None:
         super().__init__()
         self.register = register
 
-    def put(self, message, block=True, timeout=None):
+    def put(
+        self,
+        message: IncomingMessage,
+        block: bool = True,
+        timeout: float | None = None,
+    ) -> None:
         if message.type == "new_request":
             self.register(message)
         super().put(message, block, timeout)
@@ -116,7 +121,7 @@ class SessionScheduler(SimpleScheduler):
         )
         self.inbox = _SessionInbox(self.register_command)
 
-    def register_command(self, message) -> None:
+    def register_command(self, message: IncomingMessage) -> None:
         command = message.data.request.metadata.get(SESSION_METADATA_KEY)
         if command is None:
             return
@@ -131,7 +136,7 @@ class SessionScheduler(SimpleScheduler):
             self.tickets[message.request_id] = (key, order.issued)
             order.issued += 1
 
-    def finish_command(self, request_id) -> None:
+    def finish_command(self, request_id: str) -> None:
         with self.served:
             ticket = self.tickets.pop(request_id, None)
             if ticket is None:
@@ -149,7 +154,7 @@ class SessionScheduler(SimpleScheduler):
                 del self.orders[key]
             self.served.notify_all()
 
-    def _consume_if_aborted(self, request_id):
+    def _consume_if_aborted(self, request_id: str) -> bool:
         aborted = super()._consume_if_aborted(request_id)
         if aborted:
             self.finish_command(request_id)
@@ -212,7 +217,7 @@ class SessionScheduler(SimpleScheduler):
         if errors:
             raise RuntimeError("session shutdown cleanup failed") from errors[0]
 
-    def close_session(self, key, session) -> None:
+    def close_session(self, key: tuple[str, int], session: _StageSession) -> None:
         if session.state is not None:
             self.hooks.close(session.state)
             session.state = None
