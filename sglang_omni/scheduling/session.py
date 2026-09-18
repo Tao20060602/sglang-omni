@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from sglang_omni.admission import QueueFullError
@@ -307,8 +307,9 @@ class SessionScheduler(SimpleScheduler):
 
             def emit(chunk: TimedChunk) -> None:
                 nonlocal emitted_count, emitted_bytes
+                encoded = chunk.to_dict()
                 emitted_count += 1
-                emitted_bytes += wire_size(asdict(chunk))
+                emitted_bytes += wire_size(encoded)
                 limits = command["output_limits"]
                 if emitted_count > limits["chunks"] or emitted_bytes > limits["bytes"]:
                     raise QueueFullError()
@@ -317,7 +318,7 @@ class SessionScheduler(SimpleScheduler):
                         OutgoingMessage(
                             request_id=payload.request_id,
                             type="stream",
-                            data=asdict(chunk),
+                            data=encoded,
                             metadata={"modality": chunk.modality},
                         )
                     )
@@ -325,7 +326,7 @@ class SessionScheduler(SimpleScheduler):
             try:
                 result = self.hooks.append(
                     session.state,
-                    TimedChunk(**command["chunk"]),
+                    TimedChunk.from_dict(command["chunk"]),
                     payload,
                     SessionContext(ref, event, emit),
                 )

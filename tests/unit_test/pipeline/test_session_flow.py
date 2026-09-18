@@ -23,14 +23,14 @@ async def test_interleaved_cadences_input_during_output_eos_and_disconnect(tmp_p
         output_b = coordinator.session_outputs(b)
         await coordinator.append_session(a, chunk(0))
         first = await asyncio.wait_for(anext(output_a), 5)
-        assert first.payload == [1, 0]
+        assert first.payload == {"count": 1, "index": 0}
         await coordinator.append_session(a, chunk(1, eos=True))
         await coordinator.append_session(b, chunk(0))
         receipt = await asyncio.wait_for(anext(output_b), 5)
         assert receipt.kind == "input_done"
         await coordinator.append_session(b, chunk(1, eos=True))
         other = await asyncio.wait_for(anext(output_b), 5)
-        assert other.payload == [2, 0] and other.eos
+        assert other.payload == {"count": 2, "index": 0} and other.eos
         rest = [await asyncio.wait_for(anext(output_a), 5) for _ in range(7)]
         assert [item.seq for item in [first, *rest]] == list(range(8))
         assert [item.input_seq for item in rest] == [0, 0, 0, 1, 1, 1, 1]
@@ -56,7 +56,7 @@ async def test_configured_singleton_list_route_with_three_stages(tmp_path):
         output = coordinator.session_outputs(ref)
         await coordinator.append_session(ref, chunk(0, eos=True))
         data = await asyncio.wait_for(anext(output), 5)
-        assert data.kind == "data" and data.payload == [1, 0]
+        assert data.kind == "data" and data.payload == {"count": 1, "index": 0}
         receipt = await asyncio.wait_for(anext(output), 5)
         assert receipt.kind == "input_done" and receipt.eos
         await output.aclose()

@@ -237,7 +237,7 @@ async def test_cross_modality_order_and_rejected_input_retry(tmp_path):
         )
         output = coordinator.session_outputs(ref)
         await coordinator.append_session(ref, chunk(0, eos=True))
-        text = TimedChunk("text", 0, 0, 1, "hello", eos=True)
+        text = TimedChunk("text", 0, 0, 1, b"hello", eos=True)
         with pytest.raises(QueueFullError):
             await coordinator.append_session(ref, text)
         for kind in ("data", "input_done"):

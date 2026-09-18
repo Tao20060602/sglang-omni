@@ -80,7 +80,7 @@ async def test_cancel_finishes_active_unit_and_preserves_consumption(tmp_path):
         assert receipt.ref == ref
         later = await asyncio.wait_for(anext(output), 5)
         assert later.kind == "data" and later.input_seq == 1
-        assert later.ref == new_ref and later.payload[0] == 2
+        assert later.ref == new_ref and later.payload["count"] == 2
         await output.aclose()
         log = []
         while not events.empty():

@@ -180,9 +180,9 @@ class CoordinatorSessions:
         if chunk.t_start_ms < session.ends.get(chunk.modality, 0):
             raise ValueError("input timing overlaps or moves backwards")
         if isinstance(chunk.payload, bytes):
-            size = wire_size(asdict(chunk))
+            size = wire_size(chunk.to_dict())
         else:
-            encoded = msgpack.packb(asdict(chunk), use_bin_type=True)
+            encoded = msgpack.packb(chunk.to_dict(), use_bin_type=True)
             size = len(encoded)
         limits = session.limits
         if (
@@ -197,7 +197,7 @@ class CoordinatorSessions:
         ):
             raise QueueFullError()
         if not isinstance(chunk.payload, bytes):
-            chunk = TimedChunk(**msgpack.unpackb(encoded, raw=False))
+            chunk = TimedChunk.from_dict(msgpack.unpackb(encoded, raw=False))
         session.pending.append((chunk, size))
         session.pending_count += 1
         session.pending_bytes += size
@@ -259,7 +259,7 @@ class CoordinatorSessions:
             chunk.eos,
             kind,
         )
-        size = wire_size(asdict(output))
+        size = wire_size(output.to_dict())
         if (
             len(session.outputs) >= session.limits.max_output_chunks
             or session.output_bytes + size > session.limits.max_output_bytes
@@ -319,7 +319,7 @@ class CoordinatorSessions:
             },
         }
         if chunk is not None:
-            command["chunk"] = asdict(chunk)
+            command["chunk"] = chunk.to_dict()
         request = replace(
             session.request,
             metadata={**session.request.metadata, SESSION_METADATA_KEY: command},
@@ -329,7 +329,7 @@ class CoordinatorSessions:
         def output(msg: StreamMessage) -> None:
             try:
                 self.emit_session_output(
-                    session, ref, chunk.seq, TimedChunk(**msg.chunk)
+                    session, ref, chunk.seq, TimedChunk.from_dict(msg.chunk)
                 )
             except Exception as exc:
                 self._reject_completion_future(request_id, exc)

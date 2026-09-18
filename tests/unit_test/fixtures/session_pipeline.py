@@ -51,7 +51,7 @@ class Hooks(SessionHooks):
                         chunk.t_start_ms,
                         0,
                         i,
-                        [state["n"], i],
+                        {"count": state["n"], "index": i},
                         eos=chunk.eos and i == cadence - 1,
                     )
                 )

@@ -6,8 +6,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import msgpack
+import msgspec
 
 SESSION_METADATA_KEY = "omni_session"
+# Note (Junnan Li): msgspec encodes bytes as base64 text by default; keep them native on both sides.
+BUILTIN_TYPES = (bytes,)
 SessionOp = Literal["open", "append", "abort", "close"]
 
 
@@ -30,6 +33,13 @@ class TimedChunk:
     format: str | None = None
     eos: bool = False
 
+    def to_dict(self) -> dict[str, Any]:
+        return msgspec.to_builtins(self, builtin_types=BUILTIN_TYPES)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TimedChunk:
+        return msgspec.convert(data, type=cls, strict=True, builtin_types=BUILTIN_TYPES)
+
 
 @dataclass(frozen=True)
 class OutputChunk:
@@ -45,6 +55,13 @@ class OutputChunk:
     format: str | None = None
     eos: bool = False
     kind: Literal["data", "input_done"] = "data"
+
+    def to_dict(self) -> dict[str, Any]:
+        return msgspec.to_builtins(self, builtin_types=BUILTIN_TYPES)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> OutputChunk:
+        return msgspec.convert(data, type=cls, strict=True, builtin_types=BUILTIN_TYPES)
 
 
 @dataclass(frozen=True)
