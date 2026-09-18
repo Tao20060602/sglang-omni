@@ -39,7 +39,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SchedulerKwargT = TypeVar("SchedulerKwargT")
 ResultRequestT = TypeVar("ResultRequestT")
 
 
@@ -299,7 +298,7 @@ class SGLangGenerationEngineBuilder(ABC, Generic[RequestDataT]):
     def customize_server_args(self, server_args: ServerArgs) -> None:
         del server_args
 
-    def infra_kwargs(self) -> dict[str, Any]:
+    def infra_kwargs(self) -> Mapping[str, object]:
         return {}
 
     def before_memory_pool(
@@ -402,7 +401,7 @@ class SGLangGenerationEngineBuilder(ABC, Generic[RequestDataT]):
     def cleanup_build_failure(self) -> None:
         pass
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(self) -> Mapping[str, object]:
         return {}
 
     def _make_scheduler(
@@ -419,7 +418,7 @@ class SGLangGenerationEngineBuilder(ABC, Generic[RequestDataT]):
             Callable[[StagePayload], RequestDataT | DeferredAdmission] | None
         ),
         result_adapter: Callable[[ResultRequestT], object] | None,
-        extra_scheduler_kwargs: dict[str, SchedulerKwargT],
+        extra_scheduler_kwargs: Mapping[str, object],
     ) -> "OmniScheduler[RequestDataT]":
         from sglang_omni.scheduling import omni_scheduler
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from sglang.srt.managers.mm_utils import init_mm_embedding_cache
 from transformers import AutoConfig, AutoTokenizer, WhisperFeatureExtractor
@@ -25,7 +26,9 @@ if TYPE_CHECKING:
     from sglang_omni.models.arkasr.request_builders import ArkASRRequestData
     from sglang_omni.models.arkasr.sglang_model import ArkasrForConditionalGeneration
     from sglang_omni.proto import StagePayload
-    from sglang_omni.scheduling.types import DeferredAdmission
+    from sglang_omni.scheduling.messages import OutgoingMessage
+    from sglang_omni.scheduling.sglang_backend.request_data import SGLangARRequestData
+    from sglang_omni.scheduling.types import DeferredAdmission, RequestOutput
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +213,18 @@ class ArkasrEngineBuilder(AsrEngineBuilder):
             self.audio_encoder_service.close()
             self.audio_encoder_service = None
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[
+            [str, SGLangARRequestData, RequestOutput | SimpleNamespace],
+            list[OutgoingMessage],
+        ]
+        | int
+        | float
+        | None,
+    ]:
         return {
             "stream_output_builder": request_builders.make_arkasr_stream_output_builder(
                 tokenizer=self.tokenizer,

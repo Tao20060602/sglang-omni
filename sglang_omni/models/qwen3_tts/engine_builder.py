@@ -6,7 +6,7 @@ from __future__ import annotations
 import importlib
 import logging
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 import torch
 from sglang.srt.runtime_context import get_model, get_schedule
@@ -117,8 +117,8 @@ class Qwen3TtsEngineBuilder(TtsEngineBuilder):
         self,
         *,
         dtype: str,
-    ) -> dict[str, Any]:
-        defaults: dict[str, Any] = {
+    ) -> dict[str, str | int | float | list[int]]:
+        defaults: dict[str, str | int | float | list[int]] = {
             "max_running_requests": 16,
             "max_queued_requests": 16,
             "cuda_graph_max_bs": 32,
@@ -265,7 +265,15 @@ class Qwen3TtsEngineBuilder(TtsEngineBuilder):
         )
         return request_builder, result_adapter
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[[str, Qwen3TTSSGLangRequestData, object], list[OutgoingMessage]]
+        | int
+        | float
+        | None,
+    ]:
         return {
             "stream_output_builder": self._stream_output_builder,
             "request_build_max_workers": 4,

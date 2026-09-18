@@ -83,7 +83,7 @@ class HiggsTtsEngineBuilder(TtsEngineBuilder):
         self,
         *,
         dtype: str,
-    ) -> dict[str, Any]:
+    ) -> dict[str, str | int | float | list[int]]:
         del dtype
         # note (luojiaxuan): Radix cache is namespaced per ref-audio via
         # Req.extra_key (set in build_sglang_higgs_request); shared -100

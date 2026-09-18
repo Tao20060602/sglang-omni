@@ -78,8 +78,8 @@ class MossTtsLocalEngineBuilder(TtsEngineBuilder):
         self,
         *,
         dtype: str,
-    ) -> dict[str, Any]:
-        defaults: dict[str, Any] = {
+    ) -> dict[str, str | int | float]:
+        defaults: dict[str, str | int | float] = {
             "max_running_requests": 16,
             "dtype": dtype,
             "disable_cuda_graph": False,
@@ -200,7 +200,7 @@ class MossTtsLocalEngineBuilder(TtsEngineBuilder):
 
         return abort_request
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(self) -> dict[str, int | float]:
         return {
             "enable_async_decode": self.enable_async_decode,
             "async_decode_min_batch_size": self.async_decode_min_batch_size,

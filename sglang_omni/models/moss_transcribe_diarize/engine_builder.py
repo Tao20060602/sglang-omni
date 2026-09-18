@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable
 
 from sglang.srt.managers.mm_utils import init_mm_embedding_cache
@@ -28,6 +29,9 @@ if TYPE_CHECKING:
         MossTranscribeDiarizeForConditionalGeneration,
     )
     from sglang_omni.proto import StagePayload
+    from sglang_omni.scheduling.messages import OutgoingMessage
+    from sglang_omni.scheduling.sglang_backend.request_data import SGLangARRequestData
+    from sglang_omni.scheduling.types import RequestOutput
 
 
 class MossTranscribeDiarizeEngineBuilder(AsrEngineBuilder):
@@ -114,7 +118,9 @@ class MossTranscribeDiarizeEngineBuilder(AsrEngineBuilder):
             else stages._default_context_length(checkpoint_dir)
         )
 
-    def generation_defaults(self, *, dtype: str) -> dict[str, Any]:
+    def generation_defaults(
+        self, *, dtype: str
+    ) -> dict[str, str | int | float | list[int] | None]:
         # note (Xinyu): cached-prefix extends commonly contain one or two new
         # tokens, so keep exact graph buckets below the shared ladder's 4-token
         # floor instead of failing the prefill padding-factor replay guard.
@@ -189,7 +195,18 @@ class MossTranscribeDiarizeEngineBuilder(AsrEngineBuilder):
             audio_encoder_service=self.audio_encoder_service,
         )
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[
+            [str, SGLangARRequestData, RequestOutput | SimpleNamespace],
+            list[OutgoingMessage],
+        ]
+        | int
+        | float
+        | None,
+    ]:
         return {
             "stream_output_builder": (
                 request_builders.make_moss_transcribe_diarize_stream_output_builder(

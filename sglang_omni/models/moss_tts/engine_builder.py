@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sglang_omni.models.moss_tts import request_builders
 from sglang_omni.models.moss_tts.hf_loading import (
@@ -22,9 +22,11 @@ if TYPE_CHECKING:
     from sglang_omni.models.moss_tts.request_builders import MossTTSSGLangRequestData
     from sglang_omni.models.moss_tts.sglang_model import MossTTSDelaySGLangModel
     from sglang_omni.proto import StagePayload
+    from sglang_omni.scheduling.messages import OutgoingMessage
     from sglang_omni.scheduling.sglang_backend.output_processor import (
         SGLangOutputProcessor,
     )
+    from sglang_omni.scheduling.types import RequestOutput
 
 
 class MossTtsEngineBuilder(TtsEngineBuilder):
@@ -62,7 +64,7 @@ class MossTtsEngineBuilder(TtsEngineBuilder):
         self,
         *,
         dtype: str,
-    ) -> dict[str, Any]:
+    ) -> dict[str, str | int]:
         return {
             "max_running_requests": 16,
             "dtype": dtype,
@@ -116,7 +118,15 @@ class MossTtsEngineBuilder(TtsEngineBuilder):
         )
         return request_builders.make_moss_tts_scheduler_adapters(model=model)
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[
+            [str, MossTTSSGLangRequestData, RequestOutput | None],
+            list[OutgoingMessage],
+        ],
+    ]:
         return {"stream_output_builder": self._stream_output_builder}
 
     def make_abort_callback(self) -> Callable[[str], None]:

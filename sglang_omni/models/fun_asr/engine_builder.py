@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from sglang.srt.managers.mm_utils import init_mm_embedding_cache
 from transformers import AutoFeatureExtractor, AutoTokenizer
@@ -36,6 +37,9 @@ if TYPE_CHECKING:
         FunAsrNanoForConditionalGeneration,
     )
     from sglang_omni.proto import StagePayload
+    from sglang_omni.scheduling.messages import OutgoingMessage
+    from sglang_omni.scheduling.sglang_backend.request_data import SGLangARRequestData
+    from sglang_omni.scheduling.types import RequestOutput
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +125,10 @@ class FunASREngineBuilder(AsrEngineBuilder):
             encoder_token_count + self.max_new_tokens + prompt_overhead
         )
 
-    def generation_defaults(self, *, dtype: str) -> dict[str, Any]:
-        defaults: dict[str, Any] = {
+    def generation_defaults(
+        self, *, dtype: str
+    ) -> dict[str, str | int | float | list[int] | None]:
+        defaults: dict[str, str | int | float | list[int] | None] = {
             "max_running_requests": self.max_running_requests,
             "disable_cuda_graph": False,
             "disable_overlap_schedule": True,
@@ -232,7 +238,18 @@ class FunASREngineBuilder(AsrEngineBuilder):
         if self.audio_encoder_service is not None:
             self.audio_encoder_service.close()
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[
+            [str, SGLangARRequestData, RequestOutput | SimpleNamespace],
+            list[OutgoingMessage],
+        ]
+        | int
+        | float
+        | None,
+    ]:
         return {
             "stream_output_builder": request_builders.make_fun_asr_stream_output_builder(
                 tokenizer=self.tokenizer,

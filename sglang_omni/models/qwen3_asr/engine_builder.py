@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable
 
 from sglang.srt.managers.mm_utils import init_mm_embedding_cache
@@ -44,11 +45,12 @@ if TYPE_CHECKING:
         Qwen3ASRTorchMpsModelRunner,
     )
     from sglang_omni.proto import StagePayload
+    from sglang_omni.scheduling.messages import OutgoingMessage
     from sglang_omni.scheduling.omni_scheduler import OmniScheduler
     from sglang_omni.scheduling.sglang_backend.output_processor import (
         SGLangOutputProcessor,
     )
-    from sglang_omni.scheduling.types import DeferredAdmission
+    from sglang_omni.scheduling.types import DeferredAdmission, RequestOutput
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +162,7 @@ class Qwen3ASREngineBuilder(AsrEngineBuilder):
             and torch.device(self.device).type == "mps"
         )
 
-    def generation_defaults(self, *, dtype: str) -> dict[str, Any]:
+    def generation_defaults(self, *, dtype: str) -> dict[str, str | int | float | None]:
         from sglang.srt.hardware_backend.mlx.runtime import use_mlx
 
         if use_mlx():
@@ -199,7 +201,7 @@ class Qwen3ASREngineBuilder(AsrEngineBuilder):
                 "dtype": dtype,
             }
 
-        defaults: dict[str, Any] = {
+        defaults: dict[str, str | int | float | None] = {
             "max_running_requests": self.max_running_requests,
             "disable_cuda_graph": False,
             "disable_overlap_schedule": True,
@@ -445,7 +447,18 @@ class Qwen3ASREngineBuilder(AsrEngineBuilder):
             self.audio_encoder_service.close()
             self.audio_encoder_service = None
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[
+            [str, Qwen3ASRRequestData, RequestOutput | SimpleNamespace],
+            list[OutgoingMessage],
+        ]
+        | int
+        | float
+        | None,
+    ]:
         use_torch_mps = self._uses_torch_mps()
         return {
             "stream_output_builder": request_builders.make_qwen3_asr_stream_output_builder(

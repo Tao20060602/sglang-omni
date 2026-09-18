@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from sglang_omni.scheduling.engine_factory import TtsEngineBuilder
@@ -19,9 +19,11 @@ if TYPE_CHECKING:
     from sglang_omni.models.dots_tts.sglang_model import DotsTTSSGLangModel
     from sglang_omni.models.dots_tts.tail import DotsTtsAcousticTail
     from sglang_omni.proto import StagePayload
+    from sglang_omni.scheduling.messages import OutgoingMessage
     from sglang_omni.scheduling.sglang_backend.output_processor import (
         SGLangOutputProcessor,
     )
+    from sglang_omni.scheduling.types import RequestOutput
 
 
 logger = logging.getLogger(__name__)
@@ -209,7 +211,15 @@ class DotsTTSEngineBuilder(TtsEngineBuilder["DotsTTSSGLangRequestData"]):
             return {}
         return {"shutdown_callback": self._acoustic_tail.log_graph_counters}
 
-    def extra_scheduler_kwargs(self) -> dict[str, Any]:
+    def extra_scheduler_kwargs(
+        self,
+    ) -> dict[
+        str,
+        Callable[
+            [str, DotsTTSSGLangRequestData, RequestOutput], Iterator[OutgoingMessage]
+        ]
+        | bool,
+    ]:
         from sglang_omni.models.dots_tts.request_builders import build_stream_output
 
         return {
