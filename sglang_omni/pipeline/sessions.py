@@ -83,6 +83,15 @@ class CoordinatorSessions:
         if not task.cancelled():
             task.exception()
 
+    def reject_session_metadata(self, request: OmniRequest | Any) -> None:
+        if (
+            isinstance(request, OmniRequest)
+            and SESSION_METADATA_KEY in request.metadata
+        ):
+            raise ValueError(
+                f"request metadata key {SESSION_METADATA_KEY!r} is reserved"
+            )
+
     def get_session(self, ref: SessionRef) -> _Session:
         session = self.sessions.get(ref.session_id)
         if session is None or session.ref != ref:
