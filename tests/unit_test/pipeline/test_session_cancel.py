@@ -95,7 +95,7 @@ async def test_close_previous_epoch_after_cancelled_abort_waiter(tmp_path, monke
             OmniRequest(None), stages=["source", "sink"], session_id="reused"
         )
         entered, release, completed = block_async_call(
-            monkeypatch, coordinator, "_abort_session", coordinator._abort_session
+            monkeypatch, coordinator, "session_command", coordinator.session_command
         )
         waiter = asyncio.create_task(coordinator.abort_session(ref))
         try:

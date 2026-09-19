@@ -370,32 +370,32 @@ class CoordinatorSessions:
 
     async def abort_session(self, ref: SessionRef) -> SessionRef:
         """Fence output immediately; finish the active unit before changing stage state."""
-        task = self.owned_session_task(self._abort_session(ref))
-        return await asyncio.shield(task)
 
-    async def _abort_session(self, ref: SessionRef) -> SessionRef:
-        session = self.get_session(ref)
-        async with session.lock:
-            if session.closing:
-                raise RuntimeError("session is closing")
-            session.ref = replace(ref, epoch=ref.epoch + 1)
-            session.outputs = deque(
-                (output, size)
-                for output, size in session.outputs
-                if output.kind == "input_done"
-            )
-            session.output_bytes = sum(size for _, size in session.outputs)
-            try:
-                # Normal unit completion transfers KV back to its core session.
-                # Canceling the pump here would abort that request and free KV.
-                async with session.unit_lock:
-                    for owner in reversed(session.opened):
-                        await self.session_command(session, "abort", owner=owner)
-            except BaseException as exc:
-                session.error = exc
-                await self.cleanup_session(session)
-                raise
-            return session.ref
+        async def run() -> SessionRef:
+            session = self.get_session(ref)
+            async with session.lock:
+                if session.closing:
+                    raise RuntimeError("session is closing")
+                session.ref = replace(ref, epoch=ref.epoch + 1)
+                session.outputs = deque(
+                    (output, size)
+                    for output, size in session.outputs
+                    if output.kind == "input_done"
+                )
+                session.output_bytes = sum(size for _, size in session.outputs)
+                try:
+                    # Normal unit completion transfers KV back to its core session.
+                    # Canceling the pump here would abort that request and free KV.
+                    async with session.unit_lock:
+                        for owner in reversed(session.opened):
+                            await self.session_command(session, "abort", owner=owner)
+                except BaseException as exc:
+                    session.error = exc
+                    await self.cleanup_session(session)
+                    raise
+                return session.ref
+
+        return await asyncio.shield(self.owned_session_task(run()))
 
     async def close_session(self, ref: SessionRef) -> None:
         """Close the referenced incarnation regardless of its current output epoch."""
