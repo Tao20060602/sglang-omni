@@ -6,35 +6,60 @@ import asyncio
 import logging
 import multiprocessing
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from multiprocessing.process import BaseProcess
+from multiprocessing.queues import Queue
+from multiprocessing.synchronize import Event
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import pytest
 
 from sglang_omni.config.schema import PipelineConfig, ProcessConfig, StageConfig
 from sglang_omni.config.topology import compile_logical_processes
 from sglang_omni.pipeline.coordinator import Coordinator
 from sglang_omni.pipeline.replicas import expand_replica_stages
+from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.proto.session import (
     SESSION_METADATA_KEY,
     ResourceUsage,
     SessionCommand,
+    SessionOp,
     SessionRef,
     TimedChunk,
 )
 from sglang_omni.scheduling.messages import IncomingMessage
-from sglang_omni.scheduling.session import SessionHooks, SessionScheduler
+from sglang_omni.scheduling.session import (
+    SessionContext,
+    SessionHooks,
+    SessionScheduler,
+)
+
+if TYPE_CHECKING:
+    from sglang_omni.pipeline.stage_workers import StageLaunchConfig
+
+State = dict[str, Any]
 
 
 class Hooks(SessionHooks):
-    def __init__(self, name, events):
+    def __init__(self, name: str, events: Queue) -> None:
         self.name, self.events = name, events
 
-    def open(self, ref, request):
+    def open(self, ref: SessionRef, request: OmniRequest) -> State:
         self.events.put(("open", self.name, ref.session_id))
         time.sleep(request.params.get("open_delay", 0))
         if request.params.get("fail_open") == self.name:
             raise RuntimeError("open failed")
         return {"id": ref.session_id, "n": 0, "params": request.params}
 
-    def append(self, state, chunk, payload, context):
+    def append(
+        self,
+        state: State,
+        chunk: TimedChunk,
+        payload: StagePayload,
+        context: SessionContext,
+    ) -> StagePayload:
         import torch
 
         self.events.put(("append", self.name, state["id"], chunk.seq))
@@ -69,29 +94,29 @@ class Hooks(SessionHooks):
             payload.data = {"count": state["n"]}
         return payload
 
-    def abort(self, state, ref):
+    def abort(self, state: State, ref: SessionRef) -> None:
         self.events.put(("abort", self.name, state["id"]))
         if state["params"].get("cannot_abort"):
             raise RuntimeError("state cannot be retained")
 
-    def close(self, state):
+    def close(self, state: State) -> None:
         self.events.put(("close", self.name, state["id"]))
         if state["params"].get("fail_close_once") == self.name:
             state["params"]["fail_close_once"] = None
             raise RuntimeError("close rejected")
 
-    def usage(self, state):
+    def usage(self, state: State) -> ResourceUsage:
         return ResourceUsage(bytes=state["n"])
 
 
-def make_session_scheduler(name, events):
+def make_session_scheduler(name: str, events: Queue) -> SessionScheduler:
     return SessionScheduler(Hooks(name, events))
 
 
-def worker(spec, ready):
+def worker(spec: StageLaunchConfig, ready: Event) -> None:
     from sglang_omni.pipeline.stage_workers import _construct_stage
 
-    async def run():
+    async def run() -> None:
         stage = _construct_stage(spec, logging.getLogger(__name__))
         await stage.start()
         ready.set()
@@ -102,7 +127,13 @@ def worker(spec, ready):
 
 
 @asynccontextmanager
-async def pipeline(tmp_path, *, stage_count=2, replicated=False, list_next=False):
+async def pipeline(
+    tmp_path: Path,
+    *,
+    stage_count: int = 2,
+    replicated: bool = False,
+    list_next: bool = False,
+) -> AsyncIterator[tuple[Coordinator, Queue, list[BaseProcess]]]:
     from sglang_omni.pipeline.stage_workers import StageLaunchConfig
 
     ctx = multiprocessing.get_context("spawn")
@@ -180,7 +211,9 @@ async def pipeline(tmp_path, *, stage_count=2, replicated=False, list_next=False
         events.close()
 
 
-def command_metadata(op, ref: SessionRef, chunk: TimedChunk | None = None):
+def command_metadata(
+    op: SessionOp, ref: SessionRef, chunk: TimedChunk | None = None
+) -> dict[str, Any]:
     command = SessionCommand(
         op=op,
         ref=ref,
@@ -190,14 +223,19 @@ def command_metadata(op, ref: SessionRef, chunk: TimedChunk | None = None):
     return {SESSION_METADATA_KEY: command.to_dict()}
 
 
-def chunk(seq, eos=False):
+def chunk(seq: int, eos: bool = False) -> TimedChunk:
     return TimedChunk("audio", seq * 20, 20, seq, b"pcm", eos=eos)
 
 
-def block_async_call(monkeypatch, obj, name, original):
+def block_async_call(
+    monkeypatch: pytest.MonkeyPatch,
+    obj: object,
+    name: str,
+    original: Callable[..., Awaitable[Any]],
+) -> tuple[asyncio.Event, asyncio.Event, asyncio.Event]:
     entered, release, completed = (asyncio.Event() for _ in range(3))
 
-    async def blocked(*args, **kwargs):
+    async def blocked(*args: Any, **kwargs: Any) -> Any:
         entered.set()
         await release.wait()
         result = await original(*args, **kwargs)
@@ -208,17 +246,19 @@ def block_async_call(monkeypatch, obj, name, original):
     return entered, release, completed
 
 
-async def wait_until(condition, timeout=5):
+async def wait_until(condition: Callable[[], bool], timeout: float = 5) -> None:
     """Poll until condition() holds; asyncio.timeout needs Python 3.11."""
 
-    async def poll():
+    async def poll() -> None:
         while not condition():
             await asyncio.sleep(0.01)
 
     await asyncio.wait_for(poll(), timeout)
 
 
-def compute_registered(scheduler, payload):
+def compute_registered(
+    scheduler: SessionScheduler, payload: StagePayload
+) -> StagePayload:
     """Run one session command on an unstarted scheduler through its inbox registration."""
     scheduler.inbox.put(IncomingMessage(payload.request_id, "new_request", payload))
     message = scheduler.inbox.get_nowait()
