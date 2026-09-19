@@ -194,7 +194,7 @@ async def pipeline(
             processes.append(process)
             assert await asyncio.to_thread(ready.wait, 30)
             coordinator.register_stage(stage.name, endpoints[stage.name])
-        # PUB/SUB subscription is asynchronous; work begins after both workers bind.
+        # Note (Junnan Li): ZMQ connects SUB sockets asynchronously; an abort published before that is dropped.
         await asyncio.sleep(0.1)
         yield coordinator, events, processes
     finally:

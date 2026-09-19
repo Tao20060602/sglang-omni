@@ -44,8 +44,7 @@ async def test_timeout_cancel_noop_waits_before_close(tmp_path):
         while not events.empty():
             log.append(events.get(timeout=1))
         finished = next(i for i, e in enumerate(log) if e[:2] == ("finished", "sink"))
-        # Note (Junnan Li): A timed-out queued close may be dropped by request abort. If it ran,
-        # it must follow completion; otherwise scheduler.stop owns reclamation.
+        # Note (Junnan Li): Request abort may drop the queued close; one that ran must follow the hook.
         close_positions = [i for i, e in enumerate(log) if e[:2] == ("close", "sink")]
         assert all(i > finished for i in close_positions)
         assert not any(e[:2] == ("close", "source") for e in log)
@@ -97,8 +96,7 @@ async def test_unconfirmed_owner_release_blocks_new_sessions(tmp_path, reason):
         with pytest.raises(RuntimeError, match="capacity remains reserved"):
             await coordinator.close_session(ref)
         if reason == "close_rejected":
-            # Note (Junnan Li): Only the owner whose close was rejected, and owners upstream of
-            # it, stay unconfirmed; the downstream owner acknowledged its close.
+            # Note (Junnan Li): Owners close downstream first; the rejected owner and those upstream stay unconfirmed.
             closed = [e[1] for e in drain(events) if e[0] == "close"]
             assert closed == ["sink", "source"]
         await asyncio.sleep(0.4)
@@ -122,8 +120,7 @@ async def test_worker_failure_wakes_output_and_fails_session(tmp_path, monkeypat
         await asyncio.to_thread(processes[-1].join, 5)
         futures = list(coordinator._completion_futures.values())
         assert futures and not any(future.done() for future in futures)
-        # Note (Junnan Li): The pump is parked on the unit's completion future; cleanup waits
-        # for the pump, so request waiters must be failed before cleanup is entered.
+        # Note (Junnan Li): Cleanup waits for the pump, which waits on this future; fail the waiters first.
         entered, release, _ = block_async_call(
             monkeypatch, coordinator, "cleanup_session", coordinator.cleanup_session
         )
@@ -274,8 +271,7 @@ async def test_closing_rejects_input_before_cleanup(tmp_path, monkeypatch, trigg
                 command_timeout_s=0.1 if trigger == "command_timeout" else 30,
             ),
         )
-        # Note (Junnan Li): A failed command finalizes through request abort before the
-        # pump can start cleanup; admission must already be closed at that seam.
+        # Note (Junnan Li): A failed command aborts its request before the pump cleans up; admission is closed by then.
         if trigger == "command_timeout":
             seam, original = "abort", coordinator.abort
         else:
@@ -297,8 +293,7 @@ async def test_closing_rejects_input_before_cleanup(tmp_path, monkeypatch, trigg
             if task is not None:
                 await asyncio.wait_for(task, 5)
             elif trigger == "command_timeout":
-                # Note (Junnan Li): The non-preemptible hook outlives the command timeout, so
-                # this close reports an incomplete cleanup; wait for the hook before teardown.
+                # Note (Junnan Li): The hook outlives the command timeout, so close reports incomplete cleanup.
                 with pytest.raises(RuntimeError, match="capacity remains reserved"):
                     await asyncio.wait_for(coordinator.close_session(ref), 5)
                 await asyncio.sleep(0.4)

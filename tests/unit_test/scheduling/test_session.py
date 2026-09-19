@@ -246,7 +246,7 @@ def test_command_finished_by_abort_before_running_does_not_wait():
     payload = command("late", "close")
     scheduler.inbox.put(IncomingMessage("late", "new_request", payload))
     message = scheduler.inbox.get_nowait()
-    # A request-level abort consumed the number first; the command still runs.
+    # Note (Junnan Li): A request-level abort consumed the ticket first; the command still runs.
     scheduler._aborted.add("late")
     assert scheduler._consume_if_aborted("late")
     errors = []
