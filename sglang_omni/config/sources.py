@@ -479,16 +479,16 @@ def dump_user_config(config: PipelineConfig) -> dict[str, JsonValue]:
 
 def _flatten(
     prefix: str,
-    value: dict[str, Any],
+    value: Mapping[str, object],
     root: type[PipelineConfig],
-) -> list[tuple[str, Any]]:
+) -> list[tuple[str, object]]:
     """Split a nested stage entry into one patch per leaf.
 
     Stopping at schema leaves keeps the by-name merge a merge (an omitted
     sibling keeps its default) while keeping provenance per value rather
     than per block.
     """
-    out: list[tuple[str, Any]] = []
+    out: list[tuple[str, object]] = []
     for key, child in value.items():
         path = f"{prefix}.{key}"
         if isinstance(child, dict) and not ConfigPath.parse(path, root).is_leaf:

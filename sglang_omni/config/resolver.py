@@ -16,6 +16,7 @@ What it deliberately does *not* do:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -97,7 +98,7 @@ class ConfigResolver:
 # ----------------------------------------------------------------------
 
 
-def _apply(data: dict[str, Any], patch: ConfigPatch) -> None:
+def _apply(data: dict[str, object], patch: ConfigPatch) -> None:
     """Assign a leaf, or deep-merge a mapping written at a container path."""
     if patch.path.is_leaf or not isinstance(patch.value, dict):
         patch.path.write(data, deepcopy(patch.value))
@@ -110,11 +111,13 @@ def _apply(data: dict[str, Any], patch: ConfigPatch) -> None:
         patch.path.write(data, deepcopy(patch.value))
 
 
-def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+def _deep_merge(
+    base: dict[str, object], overlay: dict[str, object]
+) -> dict[str, object]:
     merged = deepcopy(base)
     for key, value in overlay.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge(merged[key], value)
+        if isinstance(value, dict) and isinstance(current := merged.get(key), dict):
+            merged[key] = _deep_merge(current, value)
         else:
             merged[key] = deepcopy(value)
     return merged
@@ -157,7 +160,7 @@ def diff_configs(
     return _diff(_as_dump(expected), _as_dump(actual), "")
 
 
-def _as_dump(value: PipelineConfig | dict[str, ValueT]) -> dict[str, Any]:
+def _as_dump(value: PipelineConfig | dict[str, ValueT]) -> Mapping[str, object]:
     return value.model_dump() if isinstance(value, PipelineConfig) else value
 
 

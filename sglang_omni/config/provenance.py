@@ -18,7 +18,6 @@ Nothing here decides anything; precedence lives in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from sglang_omni.config.patch import (
     ConfigPatch,
@@ -72,10 +71,10 @@ class ProvenanceMap:
     """Contribution history per canonical path."""
 
     entries: dict[str, list[ProvenanceEntry]] = field(default_factory=dict)
-    baseline: dict[str, Any] = field(default_factory=dict)
+    baseline: dict[str, object] = field(default_factory=dict)
     """Pre-patch value per path, recorded only for paths a patch touched."""
 
-    resolved: dict[str, Any] = field(default_factory=dict)
+    resolved: dict[str, object] = field(default_factory=dict)
     """Post-validation value per touched path, read back off the built config."""
 
     # ------------------------------------------------------------------
