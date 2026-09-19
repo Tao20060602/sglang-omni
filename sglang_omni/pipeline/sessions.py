@@ -183,8 +183,10 @@ class CoordinatorSessions:
         if isinstance(chunk.payload, bytes):
             size = wire_size(chunk.to_dict())
         else:
+            # Note (Junnan Li): Snapshot a mutable payload so later caller edits cannot reach it.
             encoded = msgpack.packb(chunk.to_dict(), use_bin_type=True)
             size = len(encoded)
+            chunk = TimedChunk.from_dict(msgpack.unpackb(encoded, raw=False))
         limits = session.limits
         if (
             size > limits.max_chunk_bytes
@@ -197,8 +199,6 @@ class CoordinatorSessions:
             and len(session.ends) >= limits.max_modalities
         ):
             raise QueueFullError()
-        if not isinstance(chunk.payload, bytes):
-            chunk = TimedChunk.from_dict(msgpack.unpackb(encoded, raw=False))
         session.pending.append((chunk, size))
         session.pending_count += 1
         session.pending_bytes += size
