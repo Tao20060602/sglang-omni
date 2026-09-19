@@ -5,26 +5,25 @@ from __future__ import annotations
 import inspect
 import sys
 import threading
-from dataclasses import asdict
 
 import pytest
 
 from sglang_omni.proto import OmniRequest, StagePayload
-from sglang_omni.proto.session import SESSION_METADATA_KEY, SessionRef, TimedChunk
+from sglang_omni.proto.session import SessionRef, TimedChunk
 from sglang_omni.scheduling.session import SessionHooks, SessionScheduler
-from tests.unit_test.fixtures.session_pipeline import compute_registered
+from tests.unit_test.fixtures.session_pipeline import (
+    command_metadata,
+    compute_registered,
+)
 
 
 def command(op):
-    data = {
-        "op": op,
-        "ref": asdict(SessionRef("session", epoch=int(op == "abort"))),
-        "chunk": asdict(TimedChunk("audio", 0, 20, 0, b"pcm")),
-        "output_limits": {"chunks": 4, "bytes": 1024},
-    }
-    return StagePayload(
-        op, OmniRequest(None, metadata={SESSION_METADATA_KEY: data}), {}
+    metadata = command_metadata(
+        op,
+        SessionRef("session", epoch=int(op == "abort")),
+        TimedChunk("audio", 0, 20, 0, b"pcm"),
     )
+    return StagePayload(op, OmniRequest(None, metadata=metadata), {})
 
 
 class Hooks(SessionHooks):

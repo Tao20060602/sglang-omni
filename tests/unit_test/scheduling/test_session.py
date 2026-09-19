@@ -10,7 +10,6 @@ import pytest
 from sglang_omni.admission import QueueFullError
 from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.proto.session import (
-    SESSION_METADATA_KEY,
     OutputChunk,
     ResourceUsage,
     SessionRef,
@@ -19,7 +18,10 @@ from sglang_omni.proto.session import (
 )
 from sglang_omni.scheduling.messages import IncomingMessage
 from sglang_omni.scheduling.session import SessionHooks, SessionScheduler
-from tests.unit_test.fixtures.session_pipeline import compute_registered
+from tests.unit_test.fixtures.session_pipeline import (
+    command_metadata,
+    compute_registered,
+)
 
 
 class Hooks(SessionHooks):
@@ -42,12 +44,7 @@ def test_open_usage_failure_releases_state():
 
     events = queue.Queue()
     scheduler = SessionScheduler(BrokenUsage("source", events))
-    request = OmniRequest(
-        None,
-        metadata={
-            SESSION_METADATA_KEY: {"op": "open", "ref": asdict(SessionRef("one"))}
-        },
-    )
+    request = OmniRequest(None, metadata=command_metadata("open", SessionRef("one")))
     with pytest.raises(RuntimeError, match="usage failed"):
         compute_registered(scheduler, StagePayload("one-open", request, {}))
     assert events.get_nowait()[0] == "open"
@@ -72,9 +69,8 @@ def test_stage_capacity_is_aggregate():
     scheduler = SessionScheduler(SizedHooks("source", events), max_state_bytes=3)
 
     def invoke(sid, op, epoch=0):
-        ref = asdict(SessionRef(sid, epoch=epoch))
         request = OmniRequest(
-            None, metadata={SESSION_METADATA_KEY: {"op": op, "ref": ref}}
+            None, metadata=command_metadata(op, SessionRef(sid, epoch=epoch))
         )
         return compute_registered(scheduler, StagePayload(sid + op, request, {}))
 
@@ -102,11 +98,8 @@ def test_malformed_command_fails_inside_the_request_boundary():
         output = scheduler.outbox.get(timeout=5)
         assert output.request_id == "bad"
         assert output.type == "error"
-        assert isinstance(output.data, KeyError)
-        request = OmniRequest(
-            None,
-            metadata={"omni_session": {"op": "open", "ref": asdict(SessionRef("ok"))}},
-        )
+        assert isinstance(output.data, ValueError)
+        request = OmniRequest(None, metadata=command_metadata("open", SessionRef("ok")))
         scheduler.inbox.put(
             IncomingMessage("open", "new_request", StagePayload("open", request, {}))
         )
@@ -140,13 +133,7 @@ def test_ordinary_request_uses_handler_or_reports_scoped_error(configured):
             assert isinstance(output.data, ValueError)
             assert "ordinary requests" in str(output.data)
         request = OmniRequest(
-            None,
-            metadata={
-                "omni_session": {
-                    "op": "open",
-                    "ref": asdict(SessionRef("after-ordinary")),
-                }
-            },
+            None, metadata=command_metadata("open", SessionRef("after-ordinary"))
         )
         scheduler.inbox.put(
             IncomingMessage("open", "new_request", StagePayload("open", request, {}))
@@ -204,13 +191,9 @@ def test_session_commands_run_in_arrival_order_even_when_one_is_aborted():
             rid,
             OmniRequest(
                 None,
-                metadata={
-                    SESSION_METADATA_KEY: {
-                        "op": op,
-                        "ref": asdict(SessionRef("s")),
-                        "chunk": asdict(TimedChunk("audio", 0, 20, 0, b"x")),
-                    }
-                },
+                metadata=command_metadata(
+                    op, SessionRef("s"), TimedChunk("audio", 0, 20, 0, b"x")
+                ),
             ),
             {},
         )
@@ -252,13 +235,9 @@ def test_command_finished_by_abort_before_running_does_not_wait():
             rid,
             OmniRequest(
                 None,
-                metadata={
-                    SESSION_METADATA_KEY: {
-                        "op": op,
-                        "ref": asdict(SessionRef("s")),
-                        "chunk": asdict(TimedChunk("audio", 0, 20, 0, b"x")),
-                    }
-                },
+                metadata=command_metadata(
+                    op, SessionRef("s"), TimedChunk("audio", 0, 20, 0, b"x")
+                ),
             ),
             {},
         )

@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from sglang_omni.proto import OmniRequest
-from sglang_omni.proto.session import TimedChunk
+from sglang_omni.proto.session import TimedChunk, find_session_command
 from tests.unit_test.fixtures.session_pipeline import chunk, pipeline
 
 
@@ -113,9 +113,9 @@ async def test_accepted_input_snapshots_mutable_payload(tmp_path, monkeypatch):
         original = coordinator.control_plane.submit_to_stage
 
         async def submit(stage, endpoint, message):
-            command = message.data.request.metadata.get("omni_session", {})
-            if command.get("op") == "append":
-                submitted.append(command["chunk"]["payload"])
+            command = find_session_command(message.data.request.metadata)
+            if command is not None and command.op == "append":
+                submitted.append(command.chunk.payload)
             return await original(stage, endpoint, message)
 
         monkeypatch.setattr(coordinator.control_plane, "submit_to_stage", submit)

@@ -8,7 +8,13 @@ import time
 from contextlib import asynccontextmanager
 
 from sglang_omni.pipeline.coordinator import Coordinator
-from sglang_omni.proto.session import ResourceUsage, TimedChunk
+from sglang_omni.proto.session import (
+    SESSION_METADATA_KEY,
+    ResourceUsage,
+    SessionCommand,
+    SessionRef,
+    TimedChunk,
+)
 from sglang_omni.scheduling.session import SessionHooks, SessionScheduler
 
 
@@ -172,6 +178,18 @@ async def pipeline(tmp_path, *, stage_count=2, replicated=False, list_next=False
                 process.join()
             assert process.exitcode == process.expected_exitcode
         events.close()
+
+
+def command_metadata(op, ref: SessionRef, chunk: TimedChunk | None = None):
+    command = SessionCommand(
+        op=op,
+        ref=ref,
+        stages=("source",),
+        max_unit_output_chunks=64,
+        max_unit_output_bytes=1 << 20,
+        chunk=chunk,
+    )
+    return {SESSION_METADATA_KEY: command.to_dict()}
 
 
 def chunk(seq, eos=False):

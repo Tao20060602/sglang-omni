@@ -83,6 +83,33 @@ class SessionLimits:
     idle_timeout_s: float = 300.0
 
 
+@dataclass(frozen=True)
+class SessionCommand:
+    """Coordinator-to-stage session command, carried in request metadata."""
+
+    op: SessionOp
+    ref: SessionRef
+    stages: tuple[str, ...]
+    max_unit_output_chunks: int
+    max_unit_output_bytes: int
+    chunk: TimedChunk | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return msgspec.to_builtins(self, builtin_types=BUILTIN_TYPES)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionCommand:
+        return msgspec.convert(data, type=cls, strict=True, builtin_types=BUILTIN_TYPES)
+
+
+def find_session_command(metadata: dict[str, Any]) -> SessionCommand | None:
+    """Return the command in request metadata, or None for an ordinary request."""
+    data = metadata.get(SESSION_METADATA_KEY)
+    if data is None:
+        return None
+    return SessionCommand.from_dict(data)
+
+
 def wire_size(value: dict[str, Any]) -> int:
     """Return the msgpack wire size of a chunk dict without copying a binary payload."""
     if isinstance(value["payload"], bytes):

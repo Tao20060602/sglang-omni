@@ -8,7 +8,7 @@ import secrets
 import uuid
 from collections import deque
 from collections.abc import Coroutine
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, AsyncIterator, Callable, Literal, TypeVar
 
 import msgpack
@@ -19,6 +19,7 @@ from sglang_omni.proto import OmniRequest, StreamMessage
 from sglang_omni.proto.session import (
     SESSION_METADATA_KEY,
     OutputChunk,
+    SessionCommand,
     SessionLimits,
     SessionOp,
     SessionRef,
@@ -309,20 +310,20 @@ class CoordinatorSessions:
         chunk: TimedChunk | None = None,
     ) -> dict[str, Any]:
         ref = session.ref
-        command = {
-            "op": op,
-            "ref": asdict(ref),
-            "stages": list(session.stages),
-            "output_limits": {
-                "chunks": session.limits.max_output_chunks,
-                "bytes": session.limits.max_output_bytes,
-            },
-        }
-        if chunk is not None:
-            command["chunk"] = chunk.to_dict()
+        command = SessionCommand(
+            op=op,
+            ref=ref,
+            stages=session.stages,
+            max_unit_output_chunks=session.limits.max_output_chunks,
+            max_unit_output_bytes=session.limits.max_output_bytes,
+            chunk=chunk,
+        )
         request = replace(
             session.request,
-            metadata={**session.request.metadata, SESSION_METADATA_KEY: command},
+            metadata={
+                **session.request.metadata,
+                SESSION_METADATA_KEY: command.to_dict(),
+            },
         )
         request_id = f"session-{uuid.uuid4()}"
 

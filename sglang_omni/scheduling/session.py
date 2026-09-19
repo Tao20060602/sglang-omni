@@ -10,11 +10,11 @@ from typing import Any, Callable
 from sglang_omni.admission import QueueFullError
 from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.proto.session import (
-    SESSION_METADATA_KEY,
     ResourceUsage,
-    SessionOp,
+    SessionCommand,
     SessionRef,
     TimedChunk,
+    find_session_command,
     wire_size,
 )
 from sglang_omni.scheduling.messages import IncomingMessage, OutgoingMessage
@@ -123,15 +123,15 @@ class SessionScheduler(SimpleScheduler):
         self.inbox = _SessionInbox(self.register_command)
 
     def register_command(self, message: IncomingMessage) -> None:
-        command = message.data.request.metadata.get(SESSION_METADATA_KEY)
-        if command is None:
-            return
         try:
-            key = (command["ref"]["session_id"], command["ref"]["incarnation"])
-        except (KeyError, TypeError):
+            command = find_session_command(message.data.request.metadata)
+        except ValueError:
             # Note (Junnan Li): put() runs on the stage loop; a malformed command
             # must fail in compute, inside the request error boundary.
             return
+        if command is None:
+            return
+        key = (command.ref.session_id, command.ref.incarnation)
         with self.session_lock:
             order = self.orders.setdefault(key, _Order())
             self.tickets[message.request_id] = (key, order.issued)
@@ -162,13 +162,12 @@ class SessionScheduler(SimpleScheduler):
         return aborted
 
     def compute(self, payload: StagePayload) -> StagePayload:
-        command = payload.request.metadata.get(SESSION_METADATA_KEY)
+        command = find_session_command(payload.request.metadata)
         if command is None:
             if self.ordinary_compute is None:
                 raise ValueError("this stage has no compute_fn for ordinary requests")
             return self.ordinary_compute(payload)
-        ref = command["ref"]
-        key = (ref["session_id"], ref["incarnation"])
+        key = (command.ref.session_id, command.ref.incarnation)
         try:
             with self.served:
                 # Note (Junnan Li): A request-level abort can consume this command's number
@@ -181,7 +180,7 @@ class SessionScheduler(SimpleScheduler):
                         lambda: (order := self.orders.get(key)) is None
                         or order.served >= seq
                     )
-            return self.compute_session(payload)
+            return self.compute_session(payload, command)
         finally:
             try:
                 # Once the hook released its owner lock, either stop observes
@@ -262,11 +261,12 @@ class SessionScheduler(SimpleScheduler):
         finally:
             session.lock.release()
 
-    def compute_session(self, payload: StagePayload) -> StagePayload:
-        command = payload.request.metadata[SESSION_METADATA_KEY]
-        ref = SessionRef(**command["ref"])
+    def compute_session(
+        self, payload: StagePayload, command: SessionCommand
+    ) -> StagePayload:
+        ref = command.ref
         key = (ref.session_id, ref.incarnation)
-        op: SessionOp = command["op"]
+        op = command.op
         if op == "open":
             self.open_session(ref, payload.request)
             payload.data = {"opened": True}
@@ -310,8 +310,10 @@ class SessionScheduler(SimpleScheduler):
                 encoded = chunk.to_dict()
                 emitted_count += 1
                 emitted_bytes += wire_size(encoded)
-                limits = command["output_limits"]
-                if emitted_count > limits["chunks"] or emitted_bytes > limits["bytes"]:
+                if (
+                    emitted_count > command.max_unit_output_chunks
+                    or emitted_bytes > command.max_unit_output_bytes
+                ):
                     raise QueueFullError()
                 if not event.is_set():
                     self.outbox.put(
@@ -326,7 +328,7 @@ class SessionScheduler(SimpleScheduler):
             try:
                 result = self.hooks.append(
                     session.state,
-                    TimedChunk.from_dict(command["chunk"]),
+                    command.chunk,
                     payload,
                     SessionContext(ref, event, emit),
                 )
