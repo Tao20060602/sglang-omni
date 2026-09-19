@@ -58,7 +58,7 @@ class SessionHooks:
 
 
 @dataclass
-class _StageSession:
+class StageSession:
     ref: SessionRef
     state: Any
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -66,7 +66,7 @@ class _StageSession:
 
 
 @dataclass
-class _Order:
+class CommandOrder:
     """Arrival order of one session's commands: seq served runs next."""
 
     issued: int = 0
@@ -74,7 +74,7 @@ class _Order:
     finished: set[int] = field(default_factory=set)
 
 
-class _SessionInbox(queue.Queue):
+class SessionInbox(queue.Queue):
     def __init__(self, register: Callable[[IncomingMessage], None]) -> None:
         super().__init__()
         self.register = register
@@ -106,12 +106,12 @@ class SessionScheduler(SimpleScheduler):
         self.ordinary_compute = compute_fn
         self.max_sessions = max_sessions
         self.max_state_bytes = max_state_bytes
-        self.sessions: dict[tuple[str, int], _StageSession] = {}
+        self.sessions: dict[tuple[str, int], StageSession] = {}
         self.commands: dict[str, threading.Event] = {}
         self.session_lock = threading.Lock()
         self.closing = False
         self.tickets: dict[str, tuple[tuple[str, int], int]] = {}
-        self.orders: dict[tuple[str, int], _Order] = {}
+        self.orders: dict[tuple[str, int], CommandOrder] = {}
         self.served = threading.Condition(self.session_lock)
         super().__init__(
             self.compute,
@@ -119,7 +119,7 @@ class SessionScheduler(SimpleScheduler):
             abort_callback=self.cancel_command,
             shutdown_callback=self.shutdown_sessions,
         )
-        self.inbox = _SessionInbox(self.register_command)
+        self.inbox = SessionInbox(self.register_command)
 
     def register_command(self, message: IncomingMessage) -> None:
         try:
@@ -131,7 +131,7 @@ class SessionScheduler(SimpleScheduler):
             return
         key = (command.ref.session_id, command.ref.incarnation)
         with self.session_lock:
-            order = self.orders.setdefault(key, _Order())
+            order = self.orders.setdefault(key, CommandOrder())
             self.tickets[message.request_id] = (key, order.issued)
             order.issued += 1
 
@@ -212,14 +212,14 @@ class SessionScheduler(SimpleScheduler):
         if errors:
             raise RuntimeError("session shutdown cleanup failed") from errors[0]
 
-    def close_session(self, key: tuple[str, int], session: _StageSession) -> None:
+    def close_session(self, key: tuple[str, int], session: StageSession) -> None:
         if session.state is not None:
             self.hooks.close(session.state)
             session.state = None
         with self.session_lock:
             self.sessions.pop(key, None)
 
-    def update_usage(self, session: _StageSession, *, admit: bool = True) -> None:
+    def update_usage(self, session: StageSession, *, admit: bool = True) -> None:
         usage = self.hooks.usage(session.state)
         with self.session_lock:
             session.usage = usage
@@ -232,7 +232,7 @@ class SessionScheduler(SimpleScheduler):
 
     def open_session(self, ref: SessionRef, request: OmniRequest) -> None:
         key = (ref.session_id, ref.incarnation)
-        session = _StageSession(ref, None)
+        session = StageSession(ref, None)
         session.lock.acquire()
         with self.session_lock:
             if self.closing:

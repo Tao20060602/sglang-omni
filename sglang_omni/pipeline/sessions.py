@@ -31,7 +31,7 @@ TaskResult = TypeVar("TaskResult")
 
 
 @dataclass
-class _Session:
+class Session:
     ref: SessionRef
     request: OmniRequest
     stages: tuple[str, ...]
@@ -66,7 +66,7 @@ class CoordinatorSessions:
         self.max_sessions = max_sessions
         self.sessions_stopping = False
         self.session_unavailable_stages: set[str] = set()
-        self.sessions: dict[str, _Session] = {}
+        self.sessions: dict[str, Session] = {}
         self.session_stream_handlers: dict[str, Callable[[StreamMessage], None]] = {}
         self.session_cleanup_tasks: set[asyncio.Task] = set()
 
@@ -92,7 +92,7 @@ class CoordinatorSessions:
                 f"request metadata key {SESSION_METADATA_KEY!r} is reserved"
             )
 
-    def get_session(self, ref: SessionRef) -> _Session:
+    def get_session(self, ref: SessionRef) -> Session:
         session = self.sessions.get(ref.session_id)
         if session is None or session.ref != ref:
             raise ValueError("unknown or stale session reference")
@@ -140,7 +140,7 @@ class CoordinatorSessions:
             raise ValueError(
                 "session route contains an unregistered owner or unavailable owner"
             )
-        session = _Session(
+        session = Session(
             SessionRef(session_id, secrets.randbelow((1 << 63) - 1) + 1),
             request,
             owners,
@@ -248,7 +248,7 @@ class CoordinatorSessions:
 
     def emit_session_output(
         self,
-        session: _Session,
+        session: Session,
         ref: SessionRef,
         input_seq: int,
         chunk: TimedChunk,
@@ -280,7 +280,7 @@ class CoordinatorSessions:
         session.next_output += 1
         session.output_wake.set()
 
-    async def pump_session(self, session: _Session) -> None:
+    async def pump_session(self, session: Session) -> None:
         try:
             while not session.closing:
                 if not session.pending:
@@ -312,7 +312,7 @@ class CoordinatorSessions:
 
     async def session_command(
         self,
-        session: _Session,
+        session: Session,
         op: SessionOp,
         *,
         owner: str | None = None,
@@ -418,7 +418,7 @@ class CoordinatorSessions:
                 "session cleanup incomplete; capacity remains reserved"
             ) from session.cleanup_error
 
-    def begin_session_close(self, session: _Session) -> None:
+    def begin_session_close(self, session: Session) -> None:
         session.closing = True
         # Note (Junnan Li): Close fences output like cancel; queued data is dropped, not drained.
         session.outputs.clear()
@@ -426,17 +426,17 @@ class CoordinatorSessions:
         session.wake.set()
         session.output_wake.set()
 
-    def close_session_state(self, session: _Session) -> Coroutine[Any, Any, None]:
+    def close_session_state(self, session: Session) -> Coroutine[Any, Any, None]:
         self.begin_session_close(session)
         return self.finish_session_close(session)
 
-    async def finish_session_close(self, session: _Session) -> None:
+    async def finish_session_close(self, session: Session) -> None:
         async with session.lock:
             if session.closed:
                 return
             await self.cleanup_session(session)
 
-    async def cleanup_session(self, session: _Session) -> None:
+    async def cleanup_session(self, session: Session) -> None:
         self.begin_session_close(session)
         if session.pump is not None and session.pump is not asyncio.current_task():
             try:
