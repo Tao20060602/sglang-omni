@@ -200,7 +200,7 @@ class SessionScheduler(SimpleScheduler):
             for event in self.commands.values():
                 event.set()
             sessions = list(self.sessions.items())
-        errors = []
+        errors: list[Exception] = []
         for key, session in sessions:
             if session.lock.acquire(blocking=False):
                 try:
