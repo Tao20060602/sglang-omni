@@ -255,6 +255,21 @@ async def test_cross_modality_order_and_rejected_input_retry(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_oversize_chunk_is_a_permanent_error(tmp_path):
+    async with pipeline(tmp_path) as (coordinator, events, processes):
+        ref = await coordinator.open_session(
+            OmniRequest(None),
+            stages=["source", "sink"],
+            limits=SessionLimits(max_chunk_bytes=256),
+        )
+        oversize = TimedChunk("audio", 0, 20, 0, b"x" * 512)
+        with pytest.raises(ValueError, match="max_chunk_bytes"):
+            await coordinator.append_session(ref, oversize)
+        assert await coordinator.append_session(ref, chunk(0, eos=True)) == 0
+        await coordinator.close_session(ref)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("trigger", ["close", "shutdown", "idle", "command_timeout"])
 async def test_closing_rejects_input_before_cleanup(tmp_path, monkeypatch, trigger):
     async with pipeline(tmp_path) as (coordinator, _, _):

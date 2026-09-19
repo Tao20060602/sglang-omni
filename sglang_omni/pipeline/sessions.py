@@ -197,9 +197,12 @@ class CoordinatorSessions:
             size = len(encoded)
             chunk = TimedChunk.from_dict(msgpack.unpackb(encoded, raw=False))
         limits = session.limits
+        if size > limits.max_chunk_bytes:
+            raise ValueError(
+                f"input chunk is {size} bytes; max_chunk_bytes is {limits.max_chunk_bytes}"
+            )
         if (
-            size > limits.max_chunk_bytes
-            or session.pending_count >= limits.max_pending_chunks
+            session.pending_count >= limits.max_pending_chunks
             or session.pending_bytes + size > limits.max_pending_bytes
         ):
             raise QueueFullError()
