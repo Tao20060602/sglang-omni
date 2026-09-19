@@ -308,7 +308,7 @@ class CoordinatorSessions:
         *,
         owner: str | None = None,
         chunk: TimedChunk | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         ref = session.ref
         command = SessionCommand(
             op=op,
@@ -336,7 +336,7 @@ class CoordinatorSessions:
         if chunk is not None:
             self.session_stream_handlers[request_id] = output
 
-        async def run() -> dict[str, Any]:
+        async def run() -> None:
             await self._submit_request(
                 request_id,
                 request,
@@ -349,10 +349,10 @@ class CoordinatorSessions:
                 replica_bindings=session.bindings,
                 bypass_admission=op in {"abort", "close"},
             )
-            return await self._completion_futures[request_id]
+            await self._completion_futures[request_id]
 
         try:
-            return await asyncio.wait_for(run(), session.limits.command_timeout_s)
+            await asyncio.wait_for(run(), session.limits.command_timeout_s)
         except asyncio.TimeoutError as exc:
             self.begin_session_close(session)
             raise TimeoutError(f"session {op} timed out") from exc
