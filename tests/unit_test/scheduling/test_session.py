@@ -206,7 +206,7 @@ def test_session_commands_run_in_arrival_order_even_when_one_is_aborted():
     threads = [threading.Thread(target=scheduler.compute, args=(messages[0].data,))]
     threads[0].start()
     assert hooks.entered.wait(5)
-    scheduler._aborted.add("second")
+    scheduler.abort("second")
     assert scheduler._consume_if_aborted("second")
     threads.append(threading.Thread(target=scheduler.compute, args=(messages[2].data,)))
     threads[1].start()
@@ -247,7 +247,7 @@ def test_command_finished_by_abort_before_running_does_not_wait():
     scheduler.inbox.put(IncomingMessage("late", "new_request", payload))
     message = scheduler.inbox.get_nowait()
     # Note (Junnan Li): A request-level abort consumed the ticket first; the command still runs.
-    scheduler._aborted.add("late")
+    scheduler.abort("late")
     assert scheduler._consume_if_aborted("late")
     errors = []
 
