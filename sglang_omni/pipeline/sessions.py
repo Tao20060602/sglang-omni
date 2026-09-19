@@ -230,11 +230,7 @@ class CoordinatorSessions:
                 while session.outputs and not session.closing:
                     output, size = session.outputs.popleft()
                     session.output_bytes -= size
-                    if output.ref == session.ref or (
-                        output.kind == "input_done"
-                        and output.ref.incarnation == session.ref.incarnation
-                    ):
-                        yield output
+                    yield output
                 if session.closed:
                     if session.error is not None:
                         raise session.error
