@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import multiprocessing
 import time
 from contextlib import asynccontextmanager
 
+from sglang_omni.config.schema import PipelineConfig, ProcessConfig, StageConfig
+from sglang_omni.config.topology import compile_logical_processes
 from sglang_omni.pipeline.coordinator import Coordinator
+from sglang_omni.pipeline.replicas import expand_replica_stages
 from sglang_omni.proto.session import (
     SESSION_METADATA_KEY,
     ResourceUsage,
@@ -15,6 +19,7 @@ from sglang_omni.proto.session import (
     SessionRef,
     TimedChunk,
 )
+from sglang_omni.scheduling.messages import IncomingMessage
 from sglang_omni.scheduling.session import SessionHooks, SessionScheduler
 
 
@@ -84,8 +89,6 @@ def make_session_scheduler(name, events):
 
 
 def worker(spec, ready):
-    import logging
-
     from sglang_omni.pipeline.stage_workers import _construct_stage
 
     async def run():
@@ -100,9 +103,6 @@ def worker(spec, ready):
 
 @asynccontextmanager
 async def pipeline(tmp_path, *, stage_count=2, replicated=False, list_next=False):
-    from sglang_omni.config.schema import PipelineConfig, ProcessConfig, StageConfig
-    from sglang_omni.config.topology import compile_logical_processes
-    from sglang_omni.pipeline.replicas import expand_replica_stages
     from sglang_omni.pipeline.stage_workers import StageLaunchConfig
 
     ctx = multiprocessing.get_context("spawn")
@@ -210,8 +210,6 @@ def block_async_call(monkeypatch, obj, name, original):
 
 def compute_registered(scheduler, payload):
     """Run one session command on an unstarted scheduler through its inbox registration."""
-    from sglang_omni.scheduling.messages import IncomingMessage
-
     scheduler.inbox.put(IncomingMessage(payload.request_id, "new_request", payload))
     message = scheduler.inbox.get_nowait()
     return scheduler.compute(message.data)
