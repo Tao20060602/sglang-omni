@@ -101,7 +101,7 @@ class SessionScheduler(SimpleScheduler):
         max_sessions: int = 64,
         max_concurrency: int = 4,
         max_state_bytes: int = 1 << 30,
-    ):
+    ) -> None:
         self.hooks = hooks
         self.ordinary_compute = compute_fn
         self.max_sessions = max_sessions
