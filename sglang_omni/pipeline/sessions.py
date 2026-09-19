@@ -337,15 +337,17 @@ class CoordinatorSessions:
         )
         request_id = f"session-{uuid.uuid4()}"
 
-        def output(msg: StreamMessage) -> None:
-            try:
-                self.emit_session_output(
-                    session, ref, chunk.seq, TimedChunk.from_dict(msg.chunk)
-                )
-            except Exception as exc:
-                self._reject_completion_future(request_id, exc)
-
         if chunk is not None:
+            input_seq = chunk.seq
+
+            def output(msg: StreamMessage) -> None:
+                try:
+                    self.emit_session_output(
+                        session, ref, input_seq, TimedChunk.from_dict(msg.chunk)
+                    )
+                except Exception as exc:
+                    self._reject_completion_future(request_id, exc)
+
             self.session_stream_handlers[request_id] = output
 
         async def run() -> None:

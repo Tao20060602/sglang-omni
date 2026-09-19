@@ -8,7 +8,7 @@ import multiprocessing
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from multiprocessing.process import BaseProcess
+from multiprocessing.context import SpawnProcess
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
 from pathlib import Path
@@ -133,7 +133,7 @@ async def pipeline(
     stage_count: int = 2,
     replicated: bool = False,
     list_next: bool = False,
-) -> AsyncIterator[tuple[Coordinator, Queue, list[BaseProcess]]]:
+) -> AsyncIterator[tuple[Coordinator, Queue, list[SpawnProcess]]]:
     from sglang_omni.pipeline.stage_workers import StageLaunchConfig
 
     ctx = multiprocessing.get_context("spawn")

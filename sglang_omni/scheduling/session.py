@@ -291,6 +291,8 @@ class SessionScheduler(SimpleScheduler):
                 return payload
             if ref != session.ref:
                 raise ValueError("stale session epoch")
+            input_chunk = command.chunk
+            assert input_chunk is not None, "append command carries no chunk"
             event = threading.Event()
             with self.session_lock:
                 self.commands[payload.request_id] = event
@@ -312,7 +314,7 @@ class SessionScheduler(SimpleScheduler):
             try:
                 result = self.hooks.append(
                     session.state,
-                    command.chunk,
+                    input_chunk,
                     payload,
                     SessionContext(ref, event, emit),
                 )
