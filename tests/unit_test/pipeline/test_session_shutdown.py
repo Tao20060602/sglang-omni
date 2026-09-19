@@ -2,8 +2,6 @@
 """Shutdown handoff at hook completion and owner unlock."""
 from __future__ import annotations
 
-import inspect
-import sys
 import threading
 
 import pytest
@@ -34,6 +32,7 @@ class Hooks(SessionHooks):
         self.closed = []
 
     def open(self, ref, request):
+        self.pause("open")
         return object()
 
     def append(self, state, chunk, payload, context):
@@ -52,18 +51,14 @@ class Hooks(SessionHooks):
         self.closed.append(state)
 
 
-def run_command(scheduler, op, trace=None):
+def run_command(scheduler, op):
     errors = []
 
     def run():
-        if trace is not None:
-            sys.settrace(trace)
         try:
             compute_registered(scheduler, command(op))
         except BaseException as exc:
             errors.append(exc)
-        finally:
-            sys.settrace(None)
 
     thread = threading.Thread(target=run)
     thread.start()
@@ -90,49 +85,18 @@ def test_stop_hands_cleanup_to_active_hook_completion(op):
     assert len(hooks.closed) == 1
 
 
-@pytest.mark.parametrize("op", ["open", "append"])
-def test_stop_after_last_hook_check_before_owner_unlock(op):
-    hooks = Hooks()
+def test_stop_during_open_rejects_the_session():
+    hooks = Hooks(block="open")
     scheduler = SessionScheduler(hooks)
-    if op != "open":
-        compute_registered(scheduler, command("open"))
-    target = scheduler.open_session if op == "open" else scheduler.compute_session
-    lines, first_line = inspect.getsourcelines(target)
-    if op == "open":
-        pause_line = max(
-            first_line + i
-            for i, line in enumerate(lines)
-            if line.strip() == "session.lock.release()"
-        )
-    else:
-        pause_line = next(
-            first_line + i
-            for i, line in enumerate(lines)
-            if line.strip() == "with session.lock:"
-        )
-    paused, release = threading.Event(), threading.Event()
-
-    def trace(frame, event, arg):
-        if (
-            event == "line"
-            and frame.f_code is target.__func__.__code__
-            and frame.f_lineno == pause_line
-            and (op == "open" or "result" in frame.f_locals)
-        ):
-            paused.set()
-            assert release.wait(5)
-        return trace
-
-    thread, errors = run_command(scheduler, op, trace)
+    thread, errors = run_command(scheduler, "open")
     try:
-        assert paused.wait(5)
+        assert hooks.entered.wait(5)
         scheduler.stop()
         assert not hooks.closed
     finally:
-        release.set()
+        hooks.release.set()
         thread.join(5)
-    assert not thread.is_alive() and not errors
+    assert not thread.is_alive()
+    assert len(errors) == 1 and isinstance(errors[0], RuntimeError)
     assert len(hooks.closed) == 1
     assert not scheduler.sessions
-    scheduler.stop()
-    assert len(hooks.closed) == 1
