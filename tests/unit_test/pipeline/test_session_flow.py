@@ -129,10 +129,13 @@ async def test_accepted_input_snapshots_mutable_payload(tmp_path, monkeypatch):
                 ref, TimedChunk("audio", 0, 20, 0, payload, eos=True)
             )
             payload["values"].append(2)
-            async with asyncio.timeout(5):
+
+            async def read_until_done():
                 async for output in outputs:
                     if output.kind == "input_done":
                         break
+
+            await asyncio.wait_for(read_until_done(), 5)
             assert submitted and all(value == {"values": [1]} for value in submitted)
         finally:
             await outputs.aclose()

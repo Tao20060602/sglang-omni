@@ -208,6 +208,16 @@ def block_async_call(monkeypatch, obj, name, original):
     return entered, release, completed
 
 
+async def wait_until(condition, timeout=5):
+    """Poll until condition() holds; asyncio.timeout needs Python 3.11."""
+
+    async def poll():
+        while not condition():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
 def compute_registered(scheduler, payload):
     """Run one session command on an unstarted scheduler through its inbox registration."""
     scheduler.inbox.put(IncomingMessage(payload.request_id, "new_request", payload))

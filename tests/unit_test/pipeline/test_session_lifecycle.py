@@ -8,7 +8,12 @@ import pytest
 from sglang_omni.admission import QueueFullError
 from sglang_omni.proto import OmniRequest
 from sglang_omni.proto.session import SessionLimits, TimedChunk
-from tests.unit_test.fixtures.session_pipeline import block_async_call, chunk, pipeline
+from tests.unit_test.fixtures.session_pipeline import (
+    block_async_call,
+    chunk,
+    pipeline,
+    wait_until,
+)
 
 
 def drain(events):
@@ -203,9 +208,7 @@ async def test_output_overflow_closes_session(tmp_path):
         )
         state = coordinator.sessions[ref.session_id]
         await coordinator.append_session(ref, chunk(0))
-        async with asyncio.timeout(5):
-            while ref.session_id in coordinator.sessions:
-                await asyncio.sleep(0.01)
+        await wait_until(lambda: ref.session_id not in coordinator.sessions)
         assert isinstance(state.error, QueueFullError)
 
 

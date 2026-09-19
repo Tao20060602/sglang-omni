@@ -6,7 +6,12 @@ import asyncio
 import pytest
 
 from sglang_omni.proto import OmniRequest
-from tests.unit_test.fixtures.session_pipeline import block_async_call, chunk, pipeline
+from tests.unit_test.fixtures.session_pipeline import (
+    block_async_call,
+    chunk,
+    pipeline,
+    wait_until,
+)
 
 
 @pytest.mark.asyncio
@@ -49,9 +54,7 @@ async def test_abort_keeps_queued_completion_receipt_but_drops_old_data(tmp_path
         assert (await asyncio.wait_for(anext(output), 5)).kind == "input_done"
         await coordinator.append_session(ref, chunk(1))
         session = coordinator.sessions[ref.session_id]
-        async with asyncio.timeout(5):
-            while session.pending_count:
-                await asyncio.sleep(0.01)
+        await wait_until(lambda: not session.pending_count)
         assert [item.kind for item, _ in session.outputs] == ["data", "input_done"]
         new_ref = await coordinator.abort_session(ref)
         receipt = await asyncio.wait_for(anext(output), 5)
