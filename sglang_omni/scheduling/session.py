@@ -125,8 +125,7 @@ class SessionScheduler(SimpleScheduler):
         try:
             command = find_session_command(message.data.request.metadata)
         except ValueError:
-            # Note (Junnan Li): put() runs on the stage loop; a malformed command
-            # must fail in compute, inside the request error boundary.
+            # Note (Junnan Li): put() runs on the stage loop; compute reports the malformed command.
             return
         if command is None:
             return
@@ -169,9 +168,7 @@ class SessionScheduler(SimpleScheduler):
         key = (command.ref.session_id, command.ref.incarnation)
         try:
             with self.served:
-                # Note (Junnan Li): A request-level abort can consume this command's number
-                # before it runs (a stream message for the same request arrives first);
-                # such a command has no ticket left and must not wait.
+                # Note (Junnan Li): A request-level abort may already have consumed the ticket.
                 ticket = self.tickets.get(payload.request_id)
                 if ticket is not None:
                     key, seq = ticket
@@ -182,8 +179,7 @@ class SessionScheduler(SimpleScheduler):
             return self.compute_session(payload, command)
         finally:
             try:
-                # Once the hook released its owner lock, either stop observes
-                # that unlocked owner or this completion observes shutdown.
+                # Note (Junnan Li): stop skips a session whose hook is running; it is closed here.
                 with self.session_lock:
                     session = self.sessions.get(key) if self.closing else None
                 if session is not None:

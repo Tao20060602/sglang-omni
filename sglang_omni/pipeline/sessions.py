@@ -142,7 +142,7 @@ class CoordinatorSessions:
         try:
             async with session.lock:
                 for owner in owners:
-                    # Include attempts: open may allocate before its reply is lost.
+                    # Note (Junnan Li): Record the attempt first; a stage may allocate before its reply is lost.
                     session.opened.append(owner)
                     await self.session_command(session, "open", owner=owner)
                 if (
@@ -452,13 +452,12 @@ class CoordinatorSessions:
             except Exception as exc:
                 session.cleanup_error = exc
                 session.error = session.error or exc
-                # An unacknowledged downstream owner may still use upstream data.
+                # Note (Junnan Li): An unacknowledged downstream owner may still use upstream data.
                 self.session_unavailable_stages.update(unconfirmed)
                 break
         session.closed = True
         session.output_wake.set()
-        # Never reclaim capacity on an unacknowledged close: a worker may still
-        # own buffers or be finishing a command. Worker teardown owns that case.
+        # Note (Junnan Li): An unacknowledged owner may still hold buffers; keep its capacity reserved.
         if session.cleanup_error is None:
             del self.sessions[session.ref.session_id]
 
