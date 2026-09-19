@@ -26,7 +26,7 @@ class RequestInfo:
     state: RequestState = RequestState.PENDING
     current_stage: str | None = None
     terminal_stages: set[str] | None = None
-    result: Any = None
+    result: object = None
     error: str | None = None
 
 
@@ -41,7 +41,7 @@ class OmniRequest:
     params: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "_type": "OmniRequest",
             "inputs": self.inputs,
@@ -75,7 +75,7 @@ class StagePayload:
         default=False, init=False, repr=False, compare=False
     )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "_type": "StagePayload",
             "request_id": self.request_id,

@@ -62,7 +62,7 @@ class DataReadyMessage:
     error: str | None = None
     replica_bindings: dict[str, int] | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         _require_str(self.request_id, "request_id")
         _require_str(self.from_stage, "from_stage")
         _require_str(self.to_stage, "to_stage")
@@ -79,7 +79,7 @@ class DataReadyMessage:
                 "DataReadyMessage.data_ref must be dict for data messages, got "
                 f"{type(self.data_ref).__name__}"
             )
-        d = {
+        d: dict[str, object] = {
             "type": "data_ready",
             "request_id": self.request_id,
             "from_stage": self.from_stage,
@@ -199,7 +199,7 @@ class AbortMessage:
 
     request_id: str
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str]:
         return {"type": "abort", "request_id": self.request_id}
 
     @classmethod
@@ -214,10 +214,10 @@ class CompleteMessage:
     request_id: str
     from_stage: str
     success: bool
-    result: Any = None
+    result: object = None
     error: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "type": "complete",
             "request_id": self.request_id,
@@ -244,14 +244,14 @@ class StreamMessage:
 
     request_id: str
     from_stage: str
-    chunk: Any
+    chunk: object
     stage_id: int | None = None
     stage_name: str | None = None
     modality: str | None = None
     chunk_id: int | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        d = {
+    def to_dict(self) -> dict[str, object]:
+        d: dict[str, object] = {
             "type": "stream",
             "request_id": self.request_id,
             "from_stage": self.from_stage,
@@ -285,7 +285,7 @@ class SubmitMessage:
     data: Any
     replica_bindings: dict[str, int] | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         data = self.data
         if isinstance(self.data, StagePayload):
             data = self.data.to_dict()
@@ -327,7 +327,7 @@ class ProfilerStartMessage:
     event_dir: str | None = None  # Per-stage JSONL event sink dir for request profiling
     enable_torch: bool = True  # When False, only request-level events are captured
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | bool | None]:
         return {
             "type": "profiler_start",
             "run_id": self.run_id,
@@ -352,7 +352,7 @@ class ProfilerStopMessage:
 
     run_id: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | None]:
         return {"type": "profiler_stop", "run_id": self.run_id}
 
     @classmethod
@@ -366,7 +366,7 @@ class AdminMessage:
 
     operation: AdminOperation
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | dict[str, object]]:
         return {"type": "admin", "operation": self.operation.to_dict()}
 
     @classmethod

@@ -47,7 +47,7 @@ class AdminOperation:
     target_stages: list[str] | None = None
     timeout_s: float | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "op_id": self.op_id,
             "action": self.action,

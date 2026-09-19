@@ -6,7 +6,7 @@ import logging
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, AsyncIterator, TypedDict, TypeVar
+from typing import AsyncIterator, TypedDict, TypeVar
 
 from sglang_omni.admission import QueueFullError
 from sglang_omni.config.topology import LogicalProcessPlan
@@ -103,7 +103,7 @@ class Coordinator:
             set(terminal_stages) if terminal_stages else set()
         )
         self._terminal_stages_resolver = terminal_stages_resolver
-        self._partial_results: dict[str, dict[str, Any]] = {}
+        self._partial_results: dict[str, dict[str, object]] = {}
         self._replica_topology = replica_topology or ReplicaTopology()
         self._logical_process_plan = logical_process_plan or LogicalProcessPlan(
             processes=(), stage_to_process={}

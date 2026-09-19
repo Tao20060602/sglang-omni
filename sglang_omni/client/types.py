@@ -25,7 +25,7 @@ class Message:
     role: str
     content: Any
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {"role": self.role, "content": self.content}
 
 
@@ -74,7 +74,7 @@ class SamplingParams:
     seed: int | None = None
     max_new_tokens: int | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "temperature": self.temperature,
             "top_p": self.top_p,
@@ -111,7 +111,7 @@ class GenerateRequest:
 
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "model": self.model,
             "prompt": self.prompt,
@@ -154,7 +154,7 @@ class GenerateChunk:
     audio_data: Any = None
     sample_rate: int | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "request_id": self.request_id,
             "index": self.index,

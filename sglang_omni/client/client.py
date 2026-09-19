@@ -50,7 +50,7 @@ class Client:
     def __init__(
         self,
         coordinator: Coordinator,
-        result_builder: Callable[[str, Any], GenerateChunk] | None = None,
+        result_builder: Callable[[str, object], GenerateChunk] | None = None,
         stream_builder: Callable[[str, StreamMessage], GenerateChunk] | None = None,
     ) -> None:
         self._coordinator = coordinator
@@ -676,7 +676,7 @@ def _extract_inputs(request: GenerateRequest) -> object:
     return messages
 
 
-def _build_params(request: GenerateRequest) -> dict[str, Any]:
+def _build_params(request: GenerateRequest) -> dict[str, object]:
     params = request.sampling.to_dict()
     max_new_tokens = request.sampling.max_new_tokens
     if request.max_tokens is not None:
