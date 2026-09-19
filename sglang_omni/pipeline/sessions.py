@@ -384,8 +384,7 @@ class CoordinatorSessions:
                 )
                 session.output_bytes = sum(size for _, size in session.outputs)
                 try:
-                    # Normal unit completion transfers KV back to its core session.
-                    # Canceling the pump here would abort that request and free KV.
+                    # Note (Junnan Li): Wait for the active unit; cancelling it would close the session.
                     async with session.unit_lock:
                         for owner in reversed(session.opened):
                             await self.session_command(session, "abort", owner=owner)
