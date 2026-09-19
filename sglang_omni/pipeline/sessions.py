@@ -62,7 +62,7 @@ class _Session:
 class CoordinatorSessions:
     """Coordinator-owned sessions over fixed stage routes."""
 
-    def init_sessions(self, max_sessions: int) -> None:
+    def __init__(self, max_sessions: int) -> None:
         self.max_sessions = max_sessions
         self.sessions_stopping = False
         self.session_unavailable_stages: set[str] = set()
