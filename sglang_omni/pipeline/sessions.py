@@ -249,16 +249,16 @@ class CoordinatorSessions:
         if session.closing or (session.ref != ref and kind != "input_done"):
             return
         output = OutputChunk(
-            ref,
-            session.next_output,
-            input_seq,
-            chunk.modality,
-            chunk.t_start_ms,
-            chunk.duration_ms,
-            chunk.payload,
-            chunk.format,
-            chunk.eos,
-            kind,
+            ref=ref,
+            seq=session.next_output,
+            input_seq=input_seq,
+            modality=chunk.modality,
+            t_start_ms=chunk.t_start_ms,
+            duration_ms=chunk.duration_ms,
+            payload=chunk.payload,
+            format=chunk.format,
+            eos=chunk.eos,
+            kind=kind,
         )
         size = wire_size(output.to_dict())
         if (
