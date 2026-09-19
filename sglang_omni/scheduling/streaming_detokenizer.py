@@ -26,7 +26,9 @@ BuildResultFn = Callable[[StagePayload, bool], dict]
 
 
 class Tokenizer(Protocol):
-    def decode(self, token_ids: list[int], skip_special_tokens: bool = False) -> str: ...
+    def decode(
+        self, token_ids: list[int], skip_special_tokens: bool = False
+    ) -> str: ...
 
 
 class HasItem(Protocol):
