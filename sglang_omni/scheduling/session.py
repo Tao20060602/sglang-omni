@@ -67,7 +67,7 @@ class _StageSession:
 
 @dataclass
 class _Order:
-    """Arrival order of one session's commands: seq `served` runs next."""
+    """Arrival order of one session's commands: seq served runs next."""
 
     issued: int = 0
     served: int = 0
