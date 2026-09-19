@@ -185,8 +185,6 @@ def command_metadata(op, ref: SessionRef, chunk: TimedChunk | None = None):
         op=op,
         ref=ref,
         stages=("source",),
-        max_unit_output_chunks=64,
-        max_unit_output_bytes=1 << 20,
         chunk=chunk,
     )
     return {SESSION_METADATA_KEY: command.to_dict()}

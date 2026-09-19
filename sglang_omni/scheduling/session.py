@@ -15,7 +15,6 @@ from sglang_omni.proto.session import (
     SessionRef,
     TimedChunk,
     find_session_command,
-    wire_size,
 )
 from sglang_omni.scheduling.messages import IncomingMessage, OutgoingMessage
 from sglang_omni.scheduling.simple_scheduler import SimpleScheduler
@@ -303,24 +302,13 @@ class SessionScheduler(SimpleScheduler):
                 if payload.request_id in self._aborted:
                     event.set()
 
-            emitted_count = emitted_bytes = 0
-
             def emit(chunk: TimedChunk) -> None:
-                nonlocal emitted_count, emitted_bytes
-                encoded = chunk.to_dict()
-                emitted_count += 1
-                emitted_bytes += wire_size(encoded)
-                if (
-                    emitted_count > command.max_unit_output_chunks
-                    or emitted_bytes > command.max_unit_output_bytes
-                ):
-                    raise QueueFullError()
                 if not event.is_set():
                     self.outbox.put(
                         OutgoingMessage(
                             request_id=payload.request_id,
                             type="stream",
-                            data=encoded,
+                            data=chunk.to_dict(),
                             metadata={"modality": chunk.modality},
                         )
                     )

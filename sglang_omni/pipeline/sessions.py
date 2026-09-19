@@ -314,8 +314,6 @@ class CoordinatorSessions:
             op=op,
             ref=ref,
             stages=session.stages,
-            max_unit_output_chunks=session.limits.max_output_chunks,
-            max_unit_output_bytes=session.limits.max_output_bytes,
             chunk=chunk,
         )
         request = replace(

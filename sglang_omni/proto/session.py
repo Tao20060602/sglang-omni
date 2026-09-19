@@ -90,8 +90,6 @@ class SessionCommand:
     op: SessionOp
     ref: SessionRef
     stages: tuple[str, ...]
-    max_unit_output_chunks: int
-    max_unit_output_bytes: int
     chunk: TimedChunk | None = None
 
     def to_dict(self) -> dict[str, Any]:
