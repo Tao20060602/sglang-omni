@@ -6,8 +6,9 @@ Reference: https://developers.openai.com/api/docs/guides/realtime
 
 from __future__ import annotations
 
+import builtins
 from enum import Enum
-from typing import Any, Literal, TypeVar
+from typing import Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -70,7 +71,7 @@ class SessionObject(EventBase):
     id: str
     object: Literal["realtime.session"] = "realtime.session"
     model: str
-    capabilities: dict[str, Any] = Field(default_factory=dict)
+    capabilities: dict[str, builtins.object] = Field(default_factory=dict)
     modalities: list[str] = Field(default_factory=lambda: ["text"])
     instructions: str = ""
     input_audio_format: str = "pcm16"
@@ -154,7 +155,7 @@ class TranscriptionSessionObject(EventBase):
     @field_serializer("turn_detection")
     def _serialize_turn_detection(
         self, value: TurnDetection | None
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, builtins.object] | None:
         # Only the settings the client actually set are echoed back.
         return value.model_dump(exclude_none=True) if value is not None else None
 
@@ -217,10 +218,10 @@ class ConversationItemTruncate(ClientEvent):
     audio_end_ms: int = Field(ge=0)
 
 
-def make_event(event_type: str, **fields: object) -> dict[str, Any]:
+def make_event(event_type: str, **fields: object) -> dict[str, object]:
     """Construct a server event dict. event_id is filled in by the
     session loop so handlers don't have to."""
-    payload: dict[str, Any] = {"type": event_type}
+    payload: dict[str, object] = {"type": event_type}
     for k, v in fields.items():
         if v is None:
             continue

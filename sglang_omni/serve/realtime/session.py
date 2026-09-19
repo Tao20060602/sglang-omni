@@ -5,7 +5,7 @@ import dataclasses
 import json
 import uuid
 from dataclasses import dataclass
-from typing import Any, Mapping, TypedDict, TypeVar, overload
+from typing import Mapping, TypedDict, TypeVar, overload
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
@@ -659,7 +659,7 @@ class RealtimeSession:
         self.active_response_has_audio = wants_audio
         text_acc: list[str] = []
         finish_reason = "stop"
-        usage: dict[str, Any] | None = None
+        usage: dict[str, int | float | None] | None = None
         saw_audio = False
         text_done = False
         audio_done = False
@@ -934,7 +934,7 @@ class RealtimeSession:
         include_audio: bool,
         status: str,
         reason: str,
-        usage: dict[str, Any] | None,
+        usage: dict[str, int | float | None] | None,
     ) -> None:
         content: list[dict[str, str]] = [{"type": "text", "text": response_text}]
         if include_audio:
@@ -1049,7 +1049,7 @@ class RealtimeSession:
             metadata={"audios": [audio_payload]},
         )
 
-    async def send(self, event: dict[str, Any]) -> None:
+    async def send(self, event: dict[str, object]) -> None:
         if self.closed:
             return
         if self.websocket.application_state != WebSocketState.CONNECTED:

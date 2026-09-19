@@ -8,7 +8,7 @@ import logging
 import uuid
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 import numpy as np
 from fastapi import WebSocket
@@ -207,7 +207,7 @@ class RealtimeTranscriptionSession:
                 continue
             await self.dispatch(payload)
 
-    async def dispatch(self, payload: dict[str, Any]) -> None:
+    async def dispatch(self, payload: dict[str, object]) -> None:
         try:
             event = parse_transcription_client_event(payload)
         except ValidationError as exc:
@@ -246,7 +246,7 @@ class RealtimeTranscriptionSession:
         self.vad.reset()
         self.vad_origin_samples = self.buffer_origin_samples
 
-    async def send(self, event: dict[str, Any] | TranscriptionServerEvent) -> None:
+    async def send(self, event: dict[str, object] | TranscriptionServerEvent) -> None:
         if self.closed:
             return
         if self.websocket.application_state != WebSocketState.CONNECTED:
@@ -267,7 +267,7 @@ class RealtimeTranscriptionSession:
         )
 
     async def _cancel_and_abort(
-        self, task: asyncio.Task[Any] | None, request_id: str | None
+        self, task: asyncio.Task[None] | None, request_id: str | None
     ) -> None:
         """Cancel the decode worker, abort its engine request, and absorb the result.
 
