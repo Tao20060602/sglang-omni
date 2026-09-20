@@ -157,8 +157,8 @@ class SessionScheduler(SimpleScheduler):
                 del self.orders[key]
             self.served.notify_all()
 
-    def _consume_if_aborted(self, request_id: str) -> bool:
-        aborted = super()._consume_if_aborted(request_id)
+    def consume_if_aborted(self, request_id: str) -> bool:
+        aborted = super().consume_if_aborted(request_id)
         with self.session_lock:
             is_close = request_id in self.close_requests
         if aborted and is_close:

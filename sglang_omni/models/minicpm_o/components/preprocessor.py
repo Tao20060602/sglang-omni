@@ -40,7 +40,7 @@ ASR_PROMPT_EN = (
 )
 
 
-def _first_batch_item(value: Any) -> Any:
+def first_batch_item(value: Any) -> Any:
     """Unwrap the batch dimension of a processor output (batch size is 1)."""
     if isinstance(value, list):
         return value[0] if value else None
@@ -49,7 +49,7 @@ def _first_batch_item(value: Any) -> Any:
     return value
 
 
-def _video_to_images(video: Any) -> list[Image.Image]:
+def video_to_images(video: Any) -> list[Image.Image]:
     """Convert one decoded video (T, C, H, W) tensor to RGB frames."""
     if isinstance(video, list) and all(
         isinstance(frame, Image.Image) for frame in video
@@ -119,6 +119,7 @@ class MiniCPMOPreprocessor:
         raw_images = None
         raw_audios = None
         raw_videos = None
+        use_audio_in_video = False
         video_params: dict[str, Any] = {}
         if isinstance(inputs, dict) and inputs.get("audio_bytes") is not None:
             messages, raw_audios = self.speech_to_text_inputs(payload, inputs)
@@ -127,6 +128,7 @@ class MiniCPMOPreprocessor:
             raw_images = inputs.get("images")
             raw_audios = inputs.get("audio") or inputs.get("audios")
             raw_videos = inputs.get("videos") or inputs.get("video")
+            use_audio_in_video = bool(inputs.get("use_audio_in_video", False))
             video_params = {
                 key: inputs.get(key)
                 for key in (
@@ -148,6 +150,7 @@ class MiniCPMOPreprocessor:
                 raw_images=raw_images,
                 raw_audios=raw_audios,
                 raw_videos=raw_videos,
+                use_audio_in_video=use_audio_in_video,
                 video_params=video_params,
             )
 
@@ -190,6 +193,7 @@ class MiniCPMOPreprocessor:
             add_generation_prompt=True,
             tokenize=False,
             use_tts_template=use_tts_template,
+            enable_thinking=False,
         )
 
     @staticmethod
@@ -242,6 +246,7 @@ class MiniCPMOPreprocessor:
         raw_images: Any,
         raw_audios: Any,
         raw_videos: Any,
+        use_audio_in_video: bool,
         video_params: dict[str, Any],
     ) -> StagePayload:
         video_kwargs = {
@@ -257,12 +262,12 @@ class MiniCPMOPreprocessor:
             videos, _, video_audios = await ensure_video_list_async(
                 raw_videos,
                 **video_kwargs,
-                extract_audio=True,
+                extract_audio=use_audio_in_video,
                 audio_target_sr=16000,
             )
         else:
             videos, video_audios = [], None
-        video_images = [frame for video in videos for frame in _video_to_images(video)]
+        video_images = [frame for video in videos for frame in video_to_images(video)]
         images.extend(video_images)
         audios = await ensure_audio_list_async(raw_audios, target_sr=16000)
         if video_audios:
@@ -283,11 +288,16 @@ class MiniCPMOPreprocessor:
             use_tts_template=bool(audios) or self.should_use_tts_template(payload),
         )
 
+        # Match the checkpoint's video recipe; the policy covers mixed images too.
+        video_options = (
+            {"max_slice_nums": 1, "use_image_id": False} if raw_videos else {}
+        )
         processed = self.processor(
             prompt_text,
             images=[images] if images else None,
             audios=[audios] if audios else None,
             return_tensors="pt",
+            **video_options,
         )
 
         input_ids = processed["input_ids"][0].to(dtype=torch.long)
@@ -296,7 +306,7 @@ class MiniCPMOPreprocessor:
         mm_inputs: dict[str, Any] = {}
         encoder_inputs: dict[str, dict[str, Any]] = {}
         if images:
-            image_bound = _first_batch_item(processed["image_bound"])
+            image_bound = first_batch_item(processed["image_bound"])
             # note (MayDomine): slice order must match the placeholder bound order.
             pixel_values = [
                 slice_tensor
@@ -305,7 +315,7 @@ class MiniCPMOPreprocessor:
                     per_image if isinstance(per_image, list) else [per_image]
                 )
             ]
-            tgt_sizes = _first_batch_item(processed["tgt_sizes"])
+            tgt_sizes = first_batch_item(processed["tgt_sizes"])
             mm_inputs["image"] = {"bounds": image_bound, "cache_key": image_cache_key}
             encoder_inputs["image_encoder"] = {
                 "pixel_values": pixel_values,
@@ -313,8 +323,8 @@ class MiniCPMOPreprocessor:
                 "cache_key": image_cache_key,
             }
         if audios:
-            audio_bounds = _first_batch_item(processed["audio_bounds"])
-            audio_feature_lens = _first_batch_item(processed["audio_feature_lens"])
+            audio_bounds = first_batch_item(processed["audio_bounds"])
+            audio_feature_lens = first_batch_item(processed["audio_feature_lens"])
             mm_inputs["audio"] = {"bounds": audio_bounds, "cache_key": audio_cache_key}
             encoder_inputs["audio_encoder"] = {
                 "audio_features": processed["audio_features"],

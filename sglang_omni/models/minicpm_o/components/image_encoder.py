@@ -6,8 +6,9 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
-from transformers import AutoConfig, PretrainedConfig
+from transformers import PretrainedConfig
 
+from sglang_omni.models.minicpm_o.hf_config import MiniCPMOConfig
 from sglang_omni.models.weight_loader import (
     load_weights_by_prefix,
     resolve_dtype,
@@ -21,14 +22,14 @@ STACKED_QKV = [
 ]
 
 
-def _vision_config_object(config: PretrainedConfig) -> PretrainedConfig:
+def vision_config_object(config: PretrainedConfig) -> PretrainedConfig:
     vision_config = config.vision_config
     if isinstance(vision_config, dict):
         return PretrainedConfig.from_dict(vision_config)
     return vision_config
 
 
-def _init_sglang_tp() -> None:
+def init_sglang_tp() -> None:
     """Reuse a TP=1 context or initialize one for standalone vision encoding."""
     import os
 
@@ -72,7 +73,7 @@ def _init_sglang_tp() -> None:
     dp._ATTN_TP_RANK = 0
 
 
-def _load_srt_weights(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
+def load_srt_weights(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Map checkpoint projections onto fused vision-attention parameters."""
     from sglang.srt.model_loader.weight_utils import default_weight_loader
 
@@ -115,19 +116,19 @@ class MiniCPMOImageEncoder(nn.Module):
         super().__init__()
         torch_dtype = resolve_dtype(dtype)
         model_dir = str(resolve_model_path(model_path))
-        config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+        config = MiniCPMOConfig.from_pretrained(model_dir)
         self.device = torch.device(device)
         self.dtype = torch_dtype
 
-        _init_sglang_tp()
+        init_sglang_tp()
         from sglang.srt.models.idefics2 import Idefics2VisionTransformer
         from sglang.srt.models.minicpmv import Resampler2_5
 
-        vision_config = _vision_config_object(config)
+        vision_config = vision_config_object(config)
         vpm = Idefics2VisionTransformer(vision_config)
         if getattr(config, "drop_vision_last_layer", False):
             vpm.encoder.layers = vpm.encoder.layers[:-1]
-        _load_srt_weights(vpm, load_weights_by_prefix(model_dir, prefix=("vpm.",)))
+        load_srt_weights(vpm, load_weights_by_prefix(model_dir, prefix=("vpm.",)))
         self.vpm = vpm
 
         embed_dim = config.hidden_size
@@ -137,7 +138,7 @@ class MiniCPMOImageEncoder(nn.Module):
             num_heads=embed_dim // 128,
             kv_dim=vision_config.hidden_size,
         )
-        _load_srt_weights(
+        load_srt_weights(
             resampler, load_weights_by_prefix(model_dir, prefix=("resampler.",))
         )
         self.resampler = resampler

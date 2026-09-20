@@ -114,10 +114,10 @@ def make_session_scheduler(name: str, events: Queue) -> SessionScheduler:
 
 
 def worker(spec: StageLaunchConfig, ready: Event) -> None:
-    from sglang_omni.pipeline.stage_workers import _construct_stage
+    from sglang_omni.pipeline.stage_workers import construct_stage
 
     async def run() -> None:
-        stage = _construct_stage(spec, logging.getLogger(__name__))
+        stage = construct_stage(spec, logging.getLogger(__name__))
         await stage.start()
         ready.set()
         await stage.run()

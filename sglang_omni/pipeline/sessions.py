@@ -346,12 +346,12 @@ class CoordinatorSessions:
                         session, ref, input_seq, TimedChunk.from_dict(msg.chunk)
                     )
                 except Exception as exc:
-                    self._reject_completion_future(request_id, exc)
+                    self.reject_completion_future(request_id, exc)
 
             self.session_stream_handlers[request_id] = output
 
         async def run() -> None:
-            await self._submit_request(
+            await self.submit_request(
                 request_id,
                 request,
                 target_stage=owner,
