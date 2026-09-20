@@ -1166,3 +1166,33 @@ C 与 D 在 0.5 ms 内相等(符合预期,C10 在这两个臂里都没执行),�
 **下一步要先补一个测量**:这轮的 trace 只记了 kernel 与 cuda_runtime,没有 cpu_op,所以那段每轮约 4 ms、
 没有任何 CUDA 调用的纯 Python 空档(graph launch 之间的 p90 间隔 4.27 ms)还没有归属。
 先用 Python 级采样剖面把它拆开,再决定 C12 与"减少每轮主机工作"哪个先做。
+
+## 第二十五轮:直接给调度循环插桩,拆开每轮的主机时间(2026-09-20 21:35-21:46 PT)
+
+**为什么不用剖面**:Tilde 上 py-spy attach 不了(`Permission Denied`,ptrace 被拒);而 `/start_profile` 出来的 trace
+只有 kernel / cuda_runtime / gpu_memcpy / cuda_driver 几类事件,**没有 cpu_op 也没有 python_function**,
+所以第二十二轮那段"每轮约 4 ms、没有任何 CUDA 调用"的纯 Python 空档没法归属。
+改用最直接的办法:单独开一棵实验代码树,在 `event_loop_normal` 的四个阶段插 `time.perf_counter()` 累加,每 200 轮打一行均值。
+
+**rps 20(均值,单位 ms,n=8600)**:
+
+| 阶段 | 内容 | 时间 | 占比 |
+|---|---|---|---|
+| ingress | `process_admin_requests` + `recv_requests` + `process_input_requests` | 0.14 | 1.5% |
+| select | `get_next_batch_to_run` | 1.03 | 11% |
+| run | `run_batch`(建 sched output、模型执行含等 GPU、发流) | 7.40 | 81% |
+| result | `process_batch_result` | 0.59 | 6% |
+| 合计 | | 9.16 | |
+
+rps 1 的同一组是 0.11 / 0.87 / 6.80 / 0.46,合计 8.20 ms。
+(这里的合计比第二十二轮的步长 p50 大,因为它是所有迭代的均值、含 prefill 轮,且插桩本身有开销。)
+
+**两个读法**:
+
+其一,**收信本身只要 0.14 ms**,所以 C10 那 3.75 ms 的回归不可能是"多做一次收信的开销"。剩下的解释是它**改变了批次结构**:
+提前准入让等待队列在 `get_next_batch_to_run` 的时刻更经常非空,于是 prefill 批次切得更碎、更频繁地打断 decode。
+下一轮用插桩树对比开/关第二次收信时的 prefill 批次数与平均批大小来验证。
+**这条如果成立,对 C12 是坏消息**:把收信搬到独立线程同样是"更早准入",会撞上同一个机制。
+
+其二,**`get_next_batch_to_run` 每轮 1.03 ms 是纯主机开销**,占了一轮的 11%,而且 rps 1 下也要 0.87 ms。
+它不依赖 GPU,是现成的、可度量的减负目标。
