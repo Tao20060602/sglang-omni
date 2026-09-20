@@ -47,7 +47,7 @@ def apply_encoder_result(
     state: LLaDA2UniPipelineState,
     *,
     stage_name: str,
-    result: Any,
+    result: object,
 ) -> None:
     """Apply encoder result to pipeline state."""
     state.encoder_outs[stage_name] = result

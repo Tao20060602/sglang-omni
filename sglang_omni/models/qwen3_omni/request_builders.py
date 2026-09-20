@@ -256,7 +256,9 @@ def apply_encoder_result(
     state.engine_outputs[stage_name] = encoder_out
 
 
-def build_lightweight_mm_inputs(mm_inputs: dict[str, Any]) -> dict[str, Any]:
+def build_lightweight_mm_inputs(
+    mm_inputs: dict[str, Any],
+) -> dict[str, dict[str, object]]:
     mm_image = mm_inputs.get("image", {})
     mm_audio = mm_inputs.get("audio", {})
     mm_video = mm_inputs.get("video", {})
@@ -394,10 +396,10 @@ def _copy_mutable_containers(value: object) -> Any:
 
 
 def _select_encoder_inputs(
-    encoder_inputs: dict[str, dict[str, Any]],
+    encoder_inputs: dict[str, dict[str, ValueT]],
     *,
     stage_name: str,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, ValueT]]:
     stage_inputs = encoder_inputs.get(stage_name)
     if not isinstance(stage_inputs, dict):
         return {}
@@ -405,13 +407,13 @@ def _select_encoder_inputs(
 
 
 def _project_encoder_input_metadata(
-    encoder_inputs: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    projected: dict[str, dict[str, Any]] = {}
+    encoder_inputs: dict[str, ValueT],
+) -> dict[str, dict[str, object]]:
+    projected: dict[str, dict[str, object]] = {}
     for stage_name, stage_inputs in encoder_inputs.items():
         if not isinstance(stage_inputs, dict):
             continue
-        stage_metadata: dict[str, Any] = {}
+        stage_metadata: dict[str, object] = {}
         cache_key = stage_inputs.get("cache_key")
         if cache_key is not None:
             stage_metadata["cache_key"] = cache_key

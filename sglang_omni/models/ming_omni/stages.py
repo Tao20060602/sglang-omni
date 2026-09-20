@@ -104,8 +104,8 @@ def _payload_with_state(
 
 def _project_encoder_input_metadata(
     encoder_inputs: dict[str, EncoderInputT],
-) -> dict[str, dict[str, Any]]:
-    projected: dict[str, dict[str, Any]] = {}
+) -> dict[str, dict[str, object]]:
+    projected: dict[str, dict[str, object]] = {}
     for stage_name, stage_inputs in encoder_inputs.items():
         if not isinstance(stage_inputs, dict):
             continue
