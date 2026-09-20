@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sglang_omni.scheduling.pipeline_state import DeclarativeStateBase, wire
+
+if TYPE_CHECKING:
+    import torch
 
 
 @dataclass
@@ -17,7 +20,9 @@ class S2ProState(DeclarativeStateBase):
 
     # -- From preprocessing ------------------------------------------------
     input_ids: Any = wire(None, codec="tensor_list")  # [seq_len] as list
-    vq_mask_tokens: Any | None = wire(None, codec="tensor_list")  # [seq_len] bool
+    vq_mask_tokens: torch.Tensor | list[bool] | None = wire(
+        None, codec="tensor_list"
+    )  # [seq_len] bool
     vq_parts: Any | None = wire(None, codec="tensor_items")  # [num_codebooks, T_i]
     num_codebooks: int = 10
     codebook_size: int = 4096
@@ -34,8 +39,8 @@ class S2ProState(DeclarativeStateBase):
     seed: int | None = None
 
     # -- From TTS engine ---------------------------------------------------
-    output_codes: Any | None = wire(None, codec="tensor_restore")  # [nq+1, T]
+    output_codes: torch.Tensor | None = wire(None, codec="tensor_restore")  # [nq+1, T]
     finish_reason: str | None = None
 
     # -- From vocoder ------------------------------------------------------
-    audio_samples: Any | None = wire(None, codec="tensor_list")
+    audio_samples: torch.Tensor | list[float] | None = wire(None, codec="tensor_list")

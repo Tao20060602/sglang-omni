@@ -13,8 +13,8 @@ from sglang_omni.scheduling.pipeline_state import DeclarativeStateBase, wire
 class AudarTTSState(DeclarativeStateBase):
     target_text: str = wire("", emit="truthy", codec="str")
     reference_text: str = wire("", emit="truthy", codec="str")
-    reference_audio: Any | None = None
+    reference_audio: dict[str, object] | None = None
     prompt: str | None = None
-    audio_codes: Any | None = None
+    audio_codes: list[int] | None = None
     generation_kwargs: dict[str, Any] = wire(default_factory=dict, codec="dict")
     sample_rate: int = wire(24000, codec="int_or")
