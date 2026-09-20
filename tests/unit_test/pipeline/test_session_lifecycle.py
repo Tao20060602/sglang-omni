@@ -44,9 +44,9 @@ async def test_timeout_cancel_noop_waits_before_close(tmp_path):
         while not events.empty():
             log.append(events.get(timeout=1))
         finished = next(i for i, e in enumerate(log) if e[:2] == ("finished", "sink"))
-        # Note (Junnan Li): Request abort may drop the queued close; one that ran must follow the hook.
+        # Note (Junnan Li): The coordinator gave up on this close, but the stage still runs it after the hook.
         close_positions = [i for i, e in enumerate(log) if e[:2] == ("close", "sink")]
-        assert all(i > finished for i in close_positions)
+        assert len(close_positions) == 1 and close_positions[0] > finished
         assert not any(e[:2] == ("close", "source") for e in log)
 
 

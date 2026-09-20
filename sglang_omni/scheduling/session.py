@@ -111,6 +111,7 @@ class SessionScheduler(SimpleScheduler):
         self.session_lock = threading.Lock()
         self.closing = False
         self.tickets: dict[str, tuple[tuple[str, int], int]] = {}
+        self.close_requests: set[str] = set()
         self.orders: dict[tuple[str, int], CommandOrder] = {}
         self.served = threading.Condition(self.session_lock)
         super().__init__(
@@ -134,9 +135,12 @@ class SessionScheduler(SimpleScheduler):
             order = self.orders.setdefault(key, CommandOrder())
             self.tickets[message.request_id] = (key, order.issued)
             order.issued += 1
+            if command.op == "close":
+                self.close_requests.add(message.request_id)
 
     def finish_command(self, request_id: str) -> None:
         with self.served:
+            self.close_requests.discard(request_id)
             ticket = self.tickets.pop(request_id, None)
             if ticket is None:
                 return
@@ -155,6 +159,11 @@ class SessionScheduler(SimpleScheduler):
 
     def _consume_if_aborted(self, request_id: str) -> bool:
         aborted = super()._consume_if_aborted(request_id)
+        with self.session_lock:
+            is_close = request_id in self.close_requests
+        if aborted and is_close:
+            # Note (Junnan Li): A timed-out close is request-aborted; skipping it would leak the state.
+            return False
         if aborted:
             self.finish_command(request_id)
         return aborted

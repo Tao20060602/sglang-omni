@@ -225,10 +225,40 @@ def test_session_commands_run_in_arrival_order_even_when_one_is_aborted():
     assert not scheduler.orders and not scheduler.tickets
 
 
-def test_command_finished_by_abort_before_running_does_not_wait():
+def test_close_runs_after_its_request_is_aborted():
 
     events = queue.Queue()
-    scheduler = SessionScheduler(Hooks("source", events), max_concurrency=2)
+    scheduler = SessionScheduler(Hooks("source", events))
+
+    def message(rid, op):
+        request = OmniRequest(None, metadata=command_metadata(op, SessionRef("s")))
+        return IncomingMessage(rid, "new_request", StagePayload(rid, request, {}))
+
+    scheduler.inbox.put(message("open", "open"))
+    scheduler.inbox.put(message("late", "close"))
+    scheduler.abort("late")
+    worker = threading.Thread(target=scheduler.start)
+    worker.start()
+    try:
+        assert events.get(timeout=5)[0] == "open"
+        assert events.get(timeout=5)[0] == "close"
+    finally:
+        scheduler.stop()
+        worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert not scheduler.sessions and not scheduler.tickets
+    assert not scheduler.close_requests
+
+
+def test_command_finished_by_abort_before_running_does_not_wait():
+
+    class AppendHooks(Hooks):
+        def append(self, state, chunk, payload, context):
+            self.events.put(("append", self.name, state["id"]))
+            return payload
+
+    events = queue.Queue()
+    scheduler = SessionScheduler(AppendHooks("source", events), max_concurrency=2)
 
     def command(rid, op):
         return StagePayload(
@@ -243,7 +273,7 @@ def test_command_finished_by_abort_before_running_does_not_wait():
         )
 
     compute_registered(scheduler, command("open", "open"))
-    payload = command("late", "close")
+    payload = command("late", "append")
     scheduler.inbox.put(IncomingMessage("late", "new_request", payload))
     message = scheduler.inbox.get_nowait()
     # Note (Junnan Li): A request-level abort consumed the ticket first; the command still runs.
@@ -265,5 +295,5 @@ def test_command_finished_by_abort_before_running_does_not_wait():
     seen = []
     while not events.empty():
         seen.append(events.get_nowait()[0])
-    assert seen == ["open", "close"]
+    assert seen == ["open", "append"]
     assert not scheduler.orders and not scheduler.tickets
