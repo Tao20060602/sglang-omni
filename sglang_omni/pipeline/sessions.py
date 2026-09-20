@@ -62,8 +62,7 @@ class Session:
 class CoordinatorSessions:
     """Coordinator-owned sessions over fixed stage routes."""
 
-    def __init__(self, max_sessions: int) -> None:
-        self.max_sessions = max_sessions
+    def __init__(self) -> None:
         self.sessions_stopping = False
         self.session_unavailable_stages: set[str] = set()
         self.sessions: dict[str, Session] = {}
@@ -115,8 +114,6 @@ class CoordinatorSessions:
             or len(set(stages)) != len(stages)
         ):
             raise ValueError("stages must be a unique route beginning at entry_stage")
-        if len(self.sessions) >= self.max_sessions:
-            raise QueueFullError()
         session_id = session_id or str(uuid.uuid4())
         if session_id in self.sessions:
             raise ValueError("session ID already reserved")

@@ -71,7 +71,6 @@ class Coordinator(CoordinatorSessions):
         logical_process_plan: LogicalProcessPlan | None = None,
         binding_policy: BindingPolicy | None = None,
         max_in_flight: int | None = None,
-        max_sessions: int = 64,
     ):
         """Initialize coordinator.
 
@@ -88,7 +87,7 @@ class Coordinator(CoordinatorSessions):
                 are already tracked. Intended as generation capacity
                 (max_running_requests + max_queued_requests).
         """
-        super().__init__(max_sessions)
+        super().__init__()
         self.entry_stage = entry_stage
         self._terminal_stages: set[str] = (
             set(terminal_stages) if terminal_stages else set()

@@ -165,7 +165,6 @@ async def pipeline(
         abort,
         "source",
         ["sink"],
-        max_sessions=3,
         logical_process_plan=plan,
         replica_topology=topology,
     )
