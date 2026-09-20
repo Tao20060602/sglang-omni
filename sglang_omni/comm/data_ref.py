@@ -82,7 +82,7 @@ class BackendRef(msgspec.Struct, frozen=True):
             length=_required(transfer_info, "size", int),
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "transport": self.transport.value,
             "info": self.info,
@@ -102,7 +102,7 @@ class MetadataTensorRef(msgspec.Struct, frozen=True):
     path: str
     ref: "DataRef"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {"path": self.path, "ref": self.ref.to_dict()}
 
     @classmethod
@@ -131,8 +131,8 @@ class DataRef(msgspec.Struct, frozen=True):
     metadata: dict[str, Any] | None = None
     metadata_tensors: tuple[MetadataTensorRef, ...] = ()
 
-    def to_dict(self) -> dict[str, Any]:
-        value: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        value: dict[str, object] = {
             "_type": "DataRef",
             "version": self.version,
             "kind": self.kind.value,

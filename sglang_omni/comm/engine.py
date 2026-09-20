@@ -351,7 +351,7 @@ class CommEngine:
         *,
         relay: Relay,
         data_ref: DataRef,
-    ) -> tuple[torch.Tensor, dict[str, Any] | None]:
+    ) -> tuple[torch.Tensor, dict[str, object] | None]:
         read_start = _comm_now_ns()
         data, metadata = await stage_io.read_stream_chunk(
             relay, data_ref, self.local_payload_device

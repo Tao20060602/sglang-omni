@@ -103,7 +103,7 @@ def extract_tensors(obj: object, path: str = "") -> tuple[Any, dict[str, torch.T
 
 def extract_cuda_tensors(
     obj: object, path: str = ""
-) -> tuple[Any, dict[str, torch.Tensor]]:
+) -> tuple[object, dict[str, torch.Tensor]]:
     if isinstance(obj, torch.Tensor):
         if obj.is_cuda:
             return {
@@ -323,7 +323,7 @@ def is_inline_stream_chunk_ref(value: object) -> bool:
 
 def deserialize_inline_stream_chunk(
     data_ref: dict[str, RefValueT] | StageDataRef,
-) -> tuple[torch.Tensor, dict[str, Any] | None]:
+) -> tuple[torch.Tensor, dict[str, object] | None]:
     if data_ref.get("_type") != _INLINE_STREAM_CHUNK_TYPE:
         raise ValueError("data_ref is not an inline stream chunk")
     if data_ref.get("version") != 1:
@@ -367,7 +367,7 @@ def is_direct_cuda_ipc_stream_chunk_ref(value: object) -> bool:
 
 def deserialize_direct_cuda_ipc_stream_chunk(
     data_ref: dict[str, RefValueT] | StageDataRef,
-) -> tuple[Any, dict[str, Any] | None]:
+) -> tuple[Any, dict[str, object] | None]:
     if data_ref.get("_type") != _DIRECT_CUDA_IPC_STREAM_CHUNK_TYPE:
         raise ValueError("data_ref is not a direct CUDA IPC stream chunk")
     if data_ref.get("version") != 1:
@@ -574,7 +574,7 @@ async def read_stream_chunk(
     relay: Relay,
     data_ref: DataRef,
     local_device: str | None = None,
-) -> tuple[torch.Tensor, dict[str, Any] | None]:
+) -> tuple[torch.Tensor, dict[str, object] | None]:
     data = await read_tensor(relay, data_ref)
     if data_ref.device is not None:
         data = _restore_tensor_device(data, data_ref.device, local_device)
@@ -838,7 +838,7 @@ def _serialize_direct_ipc_metadata_value(value: object) -> Any:
     return value
 
 
-def deserialize_direct_ipc_metadata(value: object) -> Any:
+def deserialize_direct_ipc_metadata(value: object) -> object:
     if isinstance(value, dict):
         if set(value) == {"_ipc_tensor"}:
             tensor_bytes = value["_ipc_tensor"]
