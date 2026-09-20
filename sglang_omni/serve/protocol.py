@@ -25,7 +25,7 @@ class ChatMessage(BaseModel):
     role: str
     content: object = None
     name: str | None = None
-    tool_calls: list[dict[str, Any]] | None = None
+    tool_calls: list[dict[str, object]] | None = None
     tool_call_id: str | None = None
 
 
@@ -85,7 +85,7 @@ class ChatCompletionRequest(BaseModel):
 
     # Per-stage sampling overrides (sglang-omni specific)
     stage_sampling: dict[str, dict[str, Any]] | None = None
-    stage_params: dict[str, dict[str, Any]] | None = None
+    stage_params: dict[str, dict[str, object]] | None = None
 
     # Talker-specific overrides for Qwen3-Omni speech output
     talker_temperature: float | None = None
@@ -107,7 +107,7 @@ class ChatCompletionChoice(BaseModel):
     """A single choice in a chat completion response."""
 
     index: int = 0
-    message: dict[str, Any]
+    message: dict[str, object]
     finish_reason: str | None = "stop"
 
 
@@ -170,7 +170,7 @@ class RolloutMessage(BaseModel):
     """Chat message for ``POST /generate`` (role and content required)."""
 
     role: str = Field(min_length=1)
-    content: str | list[Any]
+    content: str | list[object]
 
 
 _SERIALIZED_DTYPE_ITEMSIZE = {
@@ -238,12 +238,12 @@ class RolloutGenerateRequest(BaseModel):
     )
     stream: bool = False
     stage_sampling: dict[str, RolloutSamplingParams] | None = None
-    stage_params: dict[str, dict[str, Any]] | None = None
+    stage_params: dict[str, dict[str, object]] | None = None
     output_modalities: list[str] | None = None
 
     multimodal_train_inputs: SerializedMultimodalInputs | None = None
 
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, object] | None = None
 
     return_logprob: bool = True
     return_omni_rollout: bool = False
@@ -275,9 +275,9 @@ class GenerateMetaInfo(BaseModel):
     completion_tokens: int = 0
     cached_tokens: int = 0
     weight_version: str | None = None
-    request_metadata: dict[str, Any] | None = None
-    output_token_logprobs: list[Any] | None = None
-    omni_rollout: dict[str, Any] | None = None
+    request_metadata: dict[str, object] | None = None
+    output_token_logprobs: list[object] | None = None
+    omni_rollout: dict[str, object] | None = None
 
 
 class GenerateResponse(BaseModel):
@@ -367,7 +367,7 @@ class CreateSpeechRequest(BaseModel):
     seed: int | None = None
 
     # Per-stage overrides (sglang-omni specific)
-    stage_params: dict[str, dict[str, Any]] | None = None
+    stage_params: dict[str, dict[str, object]] | None = None
 
 
 class SpeechBatchItem(BaseModel):
@@ -437,7 +437,7 @@ class CreateSpeechBatchRequest(BaseModel):
     top_k: int | None = None
     repetition_penalty: float | None = None
     seed: int | None = None
-    stage_params: dict[str, dict[str, Any]] | None = None
+    stage_params: dict[str, dict[str, object]] | None = None
 
 
 class SpeechBatchResult(BaseModel):
@@ -449,7 +449,7 @@ class SpeechBatchResult(BaseModel):
     format: str | None = None
     media_type: str | None = None
     finish_reason: str | None = None
-    error: dict[str, Any] | None = None
+    error: dict[str, object] | None = None
 
 
 class SpeechBatchResponse(BaseModel):
@@ -494,7 +494,7 @@ class SpeechStreamSessionConfig(BaseModel):
     top_k: int | None = None
     repetition_penalty: float | None = None
     seed: int | None = None
-    stage_params: dict[str, dict[str, Any]] | None = None
+    stage_params: dict[str, dict[str, object]] | None = None
 
 
 class UploadedVoiceMetadata(BaseModel):
@@ -624,11 +624,11 @@ class UpdateWeightFromDiskRequest(AdminRequestBase):
     recapture_cuda_graph: bool = False
     token_step: int = 0
     flush_cache: bool = True
-    manifest: dict[str, Any] | None = None
+    manifest: dict[str, object] | None = None
 
 
 class UpdateWeightsFromTensorRequest(AdminRequestBase):
-    serialized_named_tensors: list[Any] | None = None
+    serialized_named_tensors: list[object] | None = None
     load_format: str | None = None
     flush_cache: bool = True
     abort_all_requests: bool = False
