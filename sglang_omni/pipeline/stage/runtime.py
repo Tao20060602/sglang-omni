@@ -113,7 +113,9 @@ class Stage:
         relay: Relay | None = None,
         comm_config: dict[str, CommConfigValueT] | None = None,
         scheduler: StageScheduler | None = None,
-        project_payload: dict[str, Callable[[Any], Any]] | None = None,
+        project_payload: (
+            dict[str, Callable[[StagePayload], StagePayload]] | None
+        ) = None,
         stream_targets: list[str] | None = None,
         get_stream_done_targets: GetStreamDoneTargetsFn | None = None,
         gpu_stage_names: set[str] | None = None,
@@ -555,7 +557,7 @@ class Stage:
         from_stage: str,
         chunk_id: int,
         data: object,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
         replica_bindings: dict[str, int] | None = None,
     ) -> None:
         if request_id in self._aborted:
@@ -1359,7 +1361,7 @@ class Stage:
         self,
         request_id: str,
         target: str,
-        payload: Any,
+        payload: StagePayload,
         *,
         allow_local_object: bool = False,
         allow_projected_local_object: bool = False,
@@ -1572,7 +1574,7 @@ class Stage:
         request_id: str,
         data: object,
         target: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> None:
         if not self._owns_external_io:
             return

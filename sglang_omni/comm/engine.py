@@ -96,7 +96,7 @@ class _StreamSendJob(msgspec.Struct, frozen=True):
     target_endpoint: str
     from_stage: str
     chunk_id: int
-    metadata: dict[str, Any] | None
+    metadata: dict[str, object] | None
     transport: TransportKind
     ready: asyncio.Future[DataRef]
     enqueued_ns: int
@@ -308,7 +308,7 @@ class CommEngine:
         target_endpoint: str,
         from_stage: str,
         chunk_id: int,
-        metadata: dict[str, Any] | None,
+        metadata: dict[str, object] | None,
         transport: TransportKind,
         replica_bindings: dict[str, int] | None = None,
     ) -> None:

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
     from sglang_omni.pipeline.stage import Stage
@@ -59,7 +59,7 @@ class LocalStageDispatcher:
         request_id: str,
         chunk_id: int,
         data: object,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
         replica_bindings: dict[str, int] | None = None,
     ) -> None:
         target = self._get_stage(from_stage, to_stage)

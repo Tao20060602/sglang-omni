@@ -4,7 +4,7 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from typing import Any, Callable
+from typing import Callable
 
 from sglang_omni.proto import StagePayload
 
@@ -53,7 +53,7 @@ class AggregatedInput(InputHandler):
         self._sources = sources
         self._merge = merge
         self._expected_sources_fn = expected_sources_fn
-        self._pending: dict[str, dict[str, Any]] = {}
+        self._pending: dict[str, dict[str, StagePayload]] = {}
         self._expected_sources: dict[str, set[str]] = {}
 
     def receive(
