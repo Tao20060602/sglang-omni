@@ -303,7 +303,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT]):
                 results.append(exc)
         return results
 
-    def get_or_encode(self, raw_input: Any, *, desc: str | None = None) -> ArtifactT:
+    def get_or_encode(self, raw_input: object, *, desc: str | None = None) -> ArtifactT:
         item = self._hook.normalize_input(raw_input)
         key = self._hook.cache_key(item)
         if key is None:

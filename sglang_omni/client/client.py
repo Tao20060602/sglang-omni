@@ -101,7 +101,7 @@ class Client:
             ClientError: If the pipeline produces no response at all.
         """
         text_parts: list[str] = []
-        audio_chunks: list[Any] = []
+        audio_chunks: list[object] = []
         sample_rate: int | None = None
         last_chunk: GenerateChunk | None = None
         finish_reason: str | None = None
@@ -232,7 +232,7 @@ class Client:
         Raises:
             ClientError: If the pipeline produces no audio output.
         """
-        audio_chunks: list[Any] = []
+        audio_chunks: list[object] = []
         sample_rate: int | None = None
         last_chunk: GenerateChunk | None = None
         extra_params = dict(request.extra_params)

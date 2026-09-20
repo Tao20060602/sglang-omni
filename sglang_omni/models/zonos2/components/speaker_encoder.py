@@ -281,7 +281,7 @@ class SpeakerEncoder(TensorReferenceEncodeHook[_Zonos2RefInput]):
 
     def encode(
         self,
-        ref_audio: Any,
+        ref_audio: object,
         sample_rate: int | None = None,
     ) -> torch.Tensor:
         """Encode reference audio into a raw ``[2048]`` CPU float32 embedding.
@@ -294,7 +294,7 @@ class SpeakerEncoder(TensorReferenceEncodeHook[_Zonos2RefInput]):
 
     def encode_with_fingerprint(
         self,
-        ref_audio: Any,
+        ref_audio: object,
         sample_rate: int | None = None,
     ) -> tuple[torch.Tensor, str]:
         """Return an embedding and the fingerprint of the same normalized input."""
