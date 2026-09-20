@@ -54,7 +54,7 @@ class HiggsTtsState(DeclarativeStateBase):
     # vocoder
     audio_samples: Any | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         data = super().to_dict()
         if self.audio_samples is None:
             data.pop("sample_rate", None)

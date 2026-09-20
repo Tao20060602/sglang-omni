@@ -75,7 +75,7 @@ class Qwen3OmniPipelineState:
             stream_state=stream_state if isinstance(stream_state, dict) else {},
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {}
         if self.raw_inputs is not None:
             data["raw_inputs"] = self.raw_inputs

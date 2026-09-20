@@ -43,7 +43,7 @@ class PipelineStateBase:
 
     # Note(Chenchen Hong): subclasses must override; the stub turns a forgotten
     # override into a clear contract error rather than an AttributeError in store_state.
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         raise NotImplementedError(f"{type(self).__name__} must implement to_dict()")
 
     @classmethod
@@ -60,7 +60,7 @@ class PipelineStateBase:
             return value.detach().cpu()
         return value
 
-    def append_usage_fields(self, data: dict[str, Any]) -> None:
+    def append_usage_fields(self, data: dict[str, object]) -> None:
         if self.prompt_tokens:
             data["prompt_tokens"] = int(self.prompt_tokens)
         if self.completion_tokens:
@@ -228,8 +228,8 @@ class DeclarativeStateBase(PipelineStateBase):
     pins both the wire layout and the restored attributes per model.
     """
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {}
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {}
         for f in dataclasses.fields(self):
             if f.name in _USAGE_FIELDS:
                 continue
@@ -240,7 +240,7 @@ class DeclarativeStateBase(PipelineStateBase):
 
     def _encode_field(
         self,
-        data: dict[str, Any],
+        data: dict[str, object],
         f: dataclasses.Field[FieldT],
         spec: _WireSpec,
         emit: str,

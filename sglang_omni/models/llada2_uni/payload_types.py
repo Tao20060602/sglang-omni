@@ -41,8 +41,8 @@ class LLaDA2UniPipelineState:
             engine_outputs=engine_outputs if isinstance(engine_outputs, dict) else {},
         )
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {}
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {}
         if self.prompt is not None:
             data["prompt"] = self.prompt
         if self.encoder_inputs:
