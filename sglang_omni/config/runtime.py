@@ -93,11 +93,11 @@ def typed_stage_kwarg_path(name: str) -> str:
 
 def apply_typed_stage_kwargs(
     factory: Callable[..., object],
-    kwargs: dict[str, Any],
+    kwargs: Mapping[str, object],
     typed_kwargs: Mapping[str, object],
     *,
     stage_name: str,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Overlay typed group values onto author kwargs, by factory signature.
 
     A typed value overrides the author's kwarg of the same name. A typed
@@ -123,9 +123,9 @@ def apply_typed_stage_kwargs(
         if (
             name == "server_args_overrides"
             and isinstance(value, Mapping)
-            and isinstance(out.get(name), Mapping)
+            and isinstance(current := out.get(name), Mapping)
         ):
-            merged = dict(out[name])
+            merged = dict(current)
             merged.update(value)
             out[name] = merged
             continue
@@ -156,12 +156,12 @@ def resolve_stage_factory_arg_defaults(
 
 def resolve_factory_signature_args(
     factory: Callable[..., object],
-    args: dict[str, Any],
+    args: Mapping[str, object],
     *,
     defaults: Mapping[str, object],
     require_gpu_id: bool = False,
     stage_name: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Inject standard factory kwargs when the resolved factory declares them."""
 
     args = dict(args)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
 
@@ -794,7 +795,7 @@ class PipelineConfig(BaseModel):
                 return stage
         raise KeyError(stage_name)
 
-    def stage_factory_kwargs(self, stage_name: str) -> dict[str, Any]:
+    def stage_factory_kwargs(self, stage_name: str) -> Mapping[str, object]:
         """Constructor kwargs the pipeline author passes to this stage's factory.
 
         This is a code-level hook, not a configuration surface: values

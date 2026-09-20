@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from pydantic import Field
 
@@ -121,7 +121,7 @@ class DotsTTSPipelineConfig(PipelineConfig):
                     "omit stream_slots to derive it from the latent engine"
                 )
 
-    def stage_factory_kwargs(self, stage_name: str) -> dict[str, Any]:
+    def stage_factory_kwargs(self, stage_name: str) -> dict[str, int]:
         if stage_name == "preprocessing":
             latent_extra = self.stage_named("latent_engine").factory.model_extra or {}
             return {

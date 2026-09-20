@@ -88,8 +88,8 @@ class Qwen3TTSPipelineConfig(PipelineConfig):
         stages = {stage.name: stage for stage in self.stages}
         return stages["preprocessing"].process != stages["tts_engine"].process
 
-    def stage_factory_kwargs(self, stage_name: str) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {}
+    def stage_factory_kwargs(self, stage_name: str) -> dict[str, object]:
+        kwargs: dict[str, object] = {}
         # Note (Jiaxin Deng): outside the engine process the preprocessing stage
         # loads its own prompt frontend and ships prepared tensors in the payload.
         if stage_name == "preprocessing" and self.preprocessing_in_own_process():

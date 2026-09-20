@@ -196,7 +196,7 @@ class FunCosyVoice3PipelineConfig(PipelineConfig):
             enable_flow_estimator_trt=bool(extras.get("enable_flow_estimator_trt")),
         )
 
-    def stage_factory_kwargs(self, stage_name: str) -> dict[str, Any]:
+    def stage_factory_kwargs(self, stage_name: str) -> dict[str, str]:
         if stage_name != "vocoder":
             return {}
         vocoder_factory = self.stage_named("vocoder").factory
