@@ -10,7 +10,7 @@ custom weight loaders.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, TypeVar
 
 if TYPE_CHECKING:
     import torch
@@ -43,7 +43,7 @@ __all__ = [
 ]
 
 
-def _to_mutable_dict(quant_config: object, metadata_key: str) -> dict[str, Any]:
+def _to_mutable_dict(quant_config: object, metadata_key: str) -> dict[str, object]:
     """Normalize a quantization metadata value to a mutable dict."""
     if isinstance(quant_config, dict):
         return quant_config
@@ -66,11 +66,11 @@ def _read_metadata(node: object, key: str) -> object:
     return getattr(node, key, None)
 
 
-def resolve_quant_config(config: object) -> dict[str, Any] | None:
+def resolve_quant_config(config: object) -> dict[str, object] | None:
     """Extract a `quantization_config` dict from a root or sub-model config."""
     visited: set[int] = set()
 
-    def _search(node: object) -> dict[str, Any] | None:
+    def _search(node: object) -> dict[str, object] | None:
         if node is None or id(node) in visited:
             return None
         visited.add(id(node))
@@ -172,7 +172,7 @@ def _strip_stage_prefix(pattern: str, plain_prefix: str, escaped_prefix: str) ->
 
 
 def _normalize_extra_config_keys(
-    quant_config: dict[str, Any], stage_prefix: str
+    quant_config: dict[str, object], stage_prefix: str
 ) -> bool:
     """Strip `stage_prefix` from the leading edge of every regex key."""
     extra_config = quant_config.get("extra_config")
@@ -195,7 +195,7 @@ def _normalize_extra_config_keys(
 
 
 def _normalize_block_name_to_quantize(
-    quant_config: dict[str, Any], stage_prefix: str
+    quant_config: dict[str, object], stage_prefix: str
 ) -> bool:
     """Strip `stage_prefix` from every entry of `block_name_to_quantize`."""
     blocks = quant_config.get("block_name_to_quantize")
@@ -225,13 +225,13 @@ def _normalize_block_name_to_quantize(
 
 def _load_writable_quant_config(
     hf_config: object,
-) -> tuple[object, str, dict[str, Any], bool] | None:
+) -> tuple[object, str, dict[str, object], bool] | None:
     """Return `(owner, metadata_key, quant_config, needs_writeback)` for the
     quant metadata discovered on `hf_config` or a nested stage sub-config,
     or `None` if none is found."""
     visited: set[int] = set()
 
-    def _search(node: object) -> tuple[object, str, dict[str, Any], bool] | None:
+    def _search(node: object) -> tuple[object, str, dict[str, object], bool] | None:
         if node is None or id(node) in visited:
             return None
         visited.add(id(node))

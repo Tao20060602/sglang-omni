@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
     from sglang_omni.models.ming_omni.talker.audio_vae.modeling_audio_vae import (
@@ -65,7 +65,7 @@ class MingTTSWeightManifest:
     def unknown_keys(self) -> list[str]:
         return list(self.keys_by_owner.get(OWNER_UNKNOWN, ()))
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | int | dict[str, int] | dict[str, list[str]]]:
         return {
             "model_path": self.model_path,
             "source": self.source,
@@ -127,8 +127,10 @@ class MingTTSWeightReport:
             if shard_id not in bucket:
                 bucket.append(shard_id)
 
-    def to_dict(self) -> dict[str, Any]:
-        def bucket_summary(buckets: dict[str, list[str]]) -> dict[str, dict[str, Any]]:
+    def to_dict(self) -> dict[str, object]:
+        def bucket_summary(
+            buckets: dict[str, list[str]]
+        ) -> dict[str, dict[str, int | list[str]]]:
             return {
                 key: {
                     "count": len(values),
@@ -141,7 +143,7 @@ class MingTTSWeightReport:
         def packed_shard_summary(
             loaded_shards: dict[str, list[str]],
             required_shards: dict[str, list[str]],
-        ) -> dict[str, dict[str, Any]]:
+        ) -> dict[str, dict[str, int | list[str]]]:
             summary = {}
             for target, required in required_shards.items():
                 loaded = loaded_shards.get(target, [])
