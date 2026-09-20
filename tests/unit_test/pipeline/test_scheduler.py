@@ -2139,6 +2139,25 @@ def test_a_slow_request_build_does_not_hold_the_loop(monkeypatch) -> None:
     assert scheduler.waiting_queue == [built.req]
 
 
+def test_arrivals_are_received_part_way_through_the_iteration(monkeypatch) -> None:
+    built = _built_request("req-mid")
+    scheduler = _scheduler_with_build_pool(monkeypatch, lambda payload: built)
+    scheduler.inbox = Queue()
+    scheduler.tp_size = 1
+    scheduler._idle_wait_message = None
+    scheduler._completed_request_ids = {}
+    scheduler.inbox.put(
+        IncomingMessage("req-mid", "new_request", _new_stage_payload("req-mid"))
+    )
+
+    try:
+        scheduler.receive_arrivals_mid_iteration()
+    finally:
+        scheduler._request_build_executor.shutdown()
+
+    assert scheduler.waiting_queue == [built.req]
+
+
 def test_omni_scheduler_normalizes_req_token_arrays() -> None:
     origin = [1, 2, 3]
     req = SimpleNamespace(

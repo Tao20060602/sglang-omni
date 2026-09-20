@@ -2381,6 +2381,7 @@ class OmniScheduler:
 
             if batch:
                 result = self.run_batch(batch)
+                self.receive_arrivals_mid_iteration()
                 if result is not _FAILED_BATCH_RESULT:
                     self.process_batch_result(batch, result)
             else:
@@ -2659,6 +2660,16 @@ class OmniScheduler:
             self.last_batch = batch
             if envs.SGLANG_ENABLE_STRICT_MEM_CHECK_DURING_BUSY.get():
                 self.self_check_during_busy()
+
+    def receive_arrivals_mid_iteration(self) -> None:
+        """Take what is in the inbox now, part way through the iteration.
+
+        The loop otherwise reads its inbox once per iteration, so a request that
+        arrives just after that read starts building a whole step later. This
+        second read sits after the step's own GPU work, with the rest of the
+        iteration's host work still ahead of it.
+        """
+        self.process_input_requests(self.recv_requests())
 
     def drain_inbox_for_request(self, request_id: str) -> None:
         retained: list[IncomingMessage] = []
