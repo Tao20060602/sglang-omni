@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-import secrets
 import uuid
 from collections import deque
 from collections.abc import Coroutine
@@ -64,6 +63,7 @@ class CoordinatorSessions:
 
     def __init__(self) -> None:
         self.sessions_stopping = False
+        self.next_incarnation = 1
         self.session_unavailable_stages: set[str] = set()
         self.sessions: dict[str, Session] = {}
         self.session_stream_handlers: dict[str, Callable[[StreamMessage], None]] = {}
@@ -138,12 +138,13 @@ class CoordinatorSessions:
                 "session route contains an unregistered owner or unavailable owner"
             )
         session = Session(
-            SessionRef(session_id, secrets.randbelow((1 << 63) - 1) + 1),
+            SessionRef(session_id, self.next_incarnation),
             request,
             owners,
             bindings,
             limits or SessionLimits(),
         )
+        self.next_incarnation += 1
         self.sessions[session_id] = session
         try:
             async with session.lock:
