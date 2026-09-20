@@ -181,7 +181,7 @@ class StageBreakdownRow:
     p95_ms: float
     max_ms: float
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | int | float]:
         return {
             "stage": self.stage,
             "interval": self.interval_name,
@@ -305,7 +305,7 @@ class HopBreakdownRow:
     p95_ms: float
     max_ms: float
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | int | float]:
         return {
             "src": self.src_stage,
             "dst": self.dst_stage,

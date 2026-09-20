@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from io import TextIOWrapper
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,9 @@ class RequestEvent:
     timestamp_ns: int
     run_id: str | None = None
     pid: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
