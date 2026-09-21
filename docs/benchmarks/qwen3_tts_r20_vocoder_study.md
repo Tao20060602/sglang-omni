@@ -1321,3 +1321,20 @@ JiaxinD 在 #2217 上要求把"首块编译"和"自适应初始等待"两个改�
 **自适应等待在这台机器上值 0.5 到 1 ms(rps 20)**,落在两个"开"臂之间 0.9 ms 的漂移里;rps 1 完全一样。
 这比第十九轮在 eval-h100 上估的 -2.5 ms 小,与外审当初的判断一致:它的上限就是那 2 ms 的等待。
 #2217 单独那 3 到 6 ms 的大头来自首块走编译内核。已回复到 PR 并写进正文。
+
+## 第三十一轮:把 TTS CI 的 qwen3-tts 线搬到 Tilde 上跑(2026-09-21 01:51-03:33 PT)
+
+GPU runner 所在主机连不上,CI 的模型阶段一直排队。按 `.github/workflows/test-tts-ci.yaml` 里原样的命令在 Tilde 上复现:
+两张 H100(harness 固定起两个 worker 挂在 Rust router 后面),`pytest tests/test_model/test_tts_ci.py -v -s -x --concurrency 16 --tts-stage <stage>`,
+`TTS_CI_MODEL` 选臂。为此在 Tilde 上从源码编了 Rust router(用户级 rustup),提前离线放好 Base / CustomVoice / Qwen3-ASR 三个 checkpoint、
+seedtts 与 seedtts-50 数据集、WavLM 相似度权重、UTMOS 权重。三处环境适配,都不进 PR:CustomVoice 缓存补 `refs/main`(手工放的快照离线解析不到仓库名);
+preset 的 `startup_timeout` 从 300 改成 900 s(Tilde 冷编译,CI runner 有热缓存);FFmpeg 8.1 共享库(torchaudio 走 torchcodec 读 wav,主机上没有 libavcodec)。
+
+| 臂 | 第 1 阶段(非流式) | 第 2 阶段(流式) |
+|---|---|---|
+| #2217 qwen3-tts | 速度 ✓、WER ✓ 1.01%、相似度 ✓、UTMOS 待重跑(FFmpeg) | 速度 ✓、流式 WER ✓ 1.01% |
+| #2216 qwen3-tts | 速度 ✓、WER ✓ 1.00%、相似度 ✓、UTMOS 待重跑 | 速度 ✓、流式 WER ✓ 1.07% |
+| #2094 CustomVoice | 速度 ✓、WER ✓ 1.74%、相似度按设计跳过、UTMOS 待重跑 | 速度 ✓、流式 WER ✓ 1.88% |
+
+途中两个自己造成的坑:CI 作业每阶段收尾按 `nvidia-smi` 全杀 GPU 进程,Tilde 的 Slurm 不隔离设备,把同节点上自己另一个作业的服务杀了两次
+(现在只杀带自己 `SLURM_JOB_ID` 的进程);harness 的 8200 固定端口在同节点多作业时冲突(现在每次起服务取空闲端口)。
