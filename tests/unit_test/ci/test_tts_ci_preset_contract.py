@@ -30,8 +30,13 @@ def test_a_named_voice_preset_carries_a_voice(name: str) -> None:
         assert model.voice, f"{name} sends no reference, so it needs a voice"
 
 
-def test_the_workflow_rotation_covers_every_preset() -> None:
-    """The random rotation and the preset registry name the same models."""
+def test_the_workflow_rotation_is_the_calibrated_presets() -> None:
+    """The random rotation draws exactly the presets whose gates are calibrated.
+
+    An uncalibrated preset gates nothing, so a random draw of it spends a CI
+    slot without deciding anything; it runs by label or dispatch until its
+    thresholds come from the CI host.
+    """
     from pathlib import Path
 
     import yaml
@@ -52,10 +57,13 @@ def test_the_workflow_rotation_covers_every_preset() -> None:
     )
     rotation = set(line[len("models=(") : line.rindex(")")].split())
 
-    assert rotation == set(TTS_CI_PRESETS), (
+    calibrated = {
+        name for name, preset in TTS_CI_PRESETS.items() if preset.thresholds.calibrated
+    }
+    assert rotation == calibrated, (
         "the rotation and tts_ci_config.py disagree: "
-        f"rotation only {sorted(rotation - set(TTS_CI_PRESETS))}, "
-        f"registry only {sorted(set(TTS_CI_PRESETS) - rotation)}"
+        f"rotation only {sorted(rotation - calibrated)}, "
+        f"calibrated only {sorted(calibrated - rotation)}"
     )
 
 

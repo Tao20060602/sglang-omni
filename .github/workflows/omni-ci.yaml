@@ -61,6 +61,7 @@ env:
   TTS_MODEL_PATH: bosonai/higgs-tts-3-4b
   MOSS_TTS_MODEL_PATH: OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5
   QWEN3_TTS_MODEL_PATH: Qwen/Qwen3-TTS-12Hz-1.7B-Base
+  QWEN3_TTS_CUSTOM_VOICE_MODEL_PATH: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
   QWEN3_ASR_MODEL_PATH: Qwen/Qwen3-ASR-1.7B
   MOSS_TRANSCRIBE_DIARIZE_MODEL_PATH: OpenMOSS-Team/MOSS-Transcribe-Diarize
   FUN_ASR_MODEL_PATH: FunAudioLLM/Fun-ASR-Nano-2512-hf
@@ -195,6 +196,7 @@ jobs:
             "${TTS_MODEL_PATH}" \
             "${MOSS_TTS_MODEL_PATH}" \
             "${QWEN3_TTS_MODEL_PATH}" \
+            "${QWEN3_TTS_CUSTOM_VOICE_MODEL_PATH}" \
             "${FUN_ASR_MODEL_PATH}" \
             "${WHISPER_ASR_MODEL_PATH}"
 
@@ -297,7 +299,7 @@ jobs:
           TTS_CI_MODEL_OVERRIDE: ${{ github.event.inputs.tts_ci_model }}
           EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          models=(higgs moss qwen3-tts qwen3-tts-custom-voice)
+          models=(higgs moss qwen3-tts)
           override="${TTS_CI_MODEL_OVERRIDE,,}"
           label_count=0
           for flag in "${RUN_HIGGS_LABEL}" "${RUN_MOSS_LABEL}" "${RUN_QWEN3_TTS_LABEL}" "${RUN_QWEN3_TTS_CUSTOM_VOICE_LABEL}"; do
