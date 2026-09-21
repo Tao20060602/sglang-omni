@@ -1338,3 +1338,7 @@ preset 的 `startup_timeout` 从 300 改成 900 s(Tilde 冷编译,CI runner 有�
 
 途中两个自己造成的坑:CI 作业每阶段收尾按 `nvidia-smi` 全杀 GPU 进程,Tilde 的 Slurm 不隔离设备,把同节点上自己另一个作业的服务杀了两次
 (现在只杀带自己 `SLURM_JOB_ID` 的进程);harness 的 8200 固定端口在同节点多作业时冲突(现在每次起服务取空闲端口)。
+
+**UTMOS 重跑(作业 366189,03:33-04:00 PT)**:装上 FFmpeg 8.1 共享库后,三个臂的第 1 阶段全部通过:
+#2217 臂 4 passed,#2216 臂 4 passed,#2094 的 CustomVoice 臂 3 passed + 1 skipped(相似度按设计跳过)。
+连同前一轮各臂第 2 阶段的 2 passed,**三个 PR 的 qwen3-tts 线全绿**。
