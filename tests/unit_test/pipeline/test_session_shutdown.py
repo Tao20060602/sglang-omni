@@ -5,8 +5,6 @@ from __future__ import annotations
 import sys
 import threading
 
-import pytest
-
 from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.proto.session import SessionRef, TimedChunk
 from sglang_omni.scheduling.session import SessionHooks, SessionScheduler
@@ -19,7 +17,7 @@ from tests.unit_test.fixtures.session_pipeline import (
 def command(op):
     metadata = command_metadata(
         op,
-        SessionRef("session", epoch=int(op == "abort")),
+        SessionRef("session"),
         TimedChunk("audio", 0, 20, 0, b"pcm"),
     )
     return StagePayload(op, OmniRequest(None, metadata=metadata), {})
@@ -39,9 +37,6 @@ class Hooks(SessionHooks):
     def append(self, state, chunk, payload, context):
         self.pause("append")
         return payload
-
-    def abort(self, state, ref):
-        self.pause("abort")
 
     def pause(self, op):
         if self.block == op:
@@ -69,12 +64,11 @@ def run_command(scheduler, op, profile=None):
     return thread, errors
 
 
-@pytest.mark.parametrize("op", ["abort", "append"])
-def test_stop_hands_cleanup_to_active_hook_completion(op):
-    hooks = Hooks(block=op)
+def test_stop_hands_cleanup_to_active_hook_completion():
+    hooks = Hooks(block="append")
     scheduler = SessionScheduler(hooks)
     compute_registered(scheduler, command("open"))
-    thread, errors = run_command(scheduler, op)
+    thread, errors = run_command(scheduler, "append")
     try:
         assert hooks.entered.wait(5)
         scheduler.stop()

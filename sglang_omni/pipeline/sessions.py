@@ -49,7 +49,6 @@ class Session:
     wake: asyncio.Event = field(default_factory=asyncio.Event)
     output_wake: asyncio.Event = field(default_factory=asyncio.Event)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    unit_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     pump: asyncio.Task | None = None
     closing: bool = False
     closed: bool = False
@@ -246,16 +245,15 @@ class CoordinatorSessions:
     def emit_session_output(
         self,
         session: Session,
-        ref: SessionRef,
         input_seq: int,
         chunk: TimedChunk,
         *,
         kind: Literal["data", "input_done"] = "data",
     ) -> None:
-        if session.closing or (session.ref != ref and kind != "input_done"):
+        if session.closing:
             return
         output = OutputChunk(
-            ref=ref,
+            ref=session.ref,
             seq=session.next_output,
             input_seq=input_seq,
             modality=chunk.modality,
@@ -286,23 +284,18 @@ class CoordinatorSessions:
                         session.wake.wait(), session.limits.idle_timeout_s
                     )
                     continue
-                async with session.unit_lock:
-                    if session.closing:
-                        break
-                    chunk, size = session.pending.popleft()
-                    ref = session.ref
-                    try:
-                        await self.session_command(session, "append", chunk=chunk)
-                        self.emit_session_output(
-                            session,
-                            ref,
-                            chunk.seq,
-                            replace(chunk, payload=None),
-                            kind="input_done",
-                        )
-                    finally:
-                        session.pending_count -= 1
-                        session.pending_bytes -= size
+                chunk, size = session.pending.popleft()
+                try:
+                    await self.session_command(session, "append", chunk=chunk)
+                    self.emit_session_output(
+                        session,
+                        chunk.seq,
+                        replace(chunk, payload=None),
+                        kind="input_done",
+                    )
+                finally:
+                    session.pending_count -= 1
+                    session.pending_bytes -= size
         except Exception as exc:
             session.error = exc
             self.owned_session_task(self.close_session_state(session))
@@ -337,7 +330,7 @@ class CoordinatorSessions:
             def output(msg: StreamMessage) -> None:
                 try:
                     self.emit_session_output(
-                        session, ref, input_seq, TimedChunk.from_dict(msg.chunk)
+                        session, input_seq, TimedChunk.from_dict(msg.chunk)
                     )
                 except Exception as exc:
                     self.reject_completion_future(request_id, exc)
@@ -355,7 +348,7 @@ class CoordinatorSessions:
                     else {self._replica_topology.logical_name(session.stages[-1])}
                 ),
                 replica_bindings=session.bindings,
-                bypass_admission=op in {"abort", "close"},
+                bypass_admission=op == "close",
             )
             await self._completion_futures[request_id]
 
@@ -379,40 +372,11 @@ class CoordinatorSessions:
             if future is not None and not future.done():
                 future.cancel()
 
-    async def abort_session(self, ref: SessionRef) -> SessionRef:
-        """Fence output immediately; finish the active unit before changing stage state."""
-
-        async def run() -> SessionRef:
-            session = self.get_session(ref)
-            async with session.lock:
-                if session.closing:
-                    raise RuntimeError("session is closing")
-                session.ref = replace(ref, epoch=ref.epoch + 1)
-                session.outputs = deque(
-                    (output, size)
-                    for output, size in session.outputs
-                    if output.kind == "input_done"
-                )
-                session.output_bytes = sum(size for _, size in session.outputs)
-                try:
-                    # Note (Junnan Li): Wait for the active unit; cancelling it would close the session.
-                    async with session.unit_lock:
-                        for owner in reversed(session.opened):
-                            await self.session_command(session, "abort", owner=owner)
-                except BaseException as exc:
-                    session.error = exc
-                    await self.cleanup_session(session)
-                    raise
-                return session.ref
-
-        return await asyncio.shield(self.owned_session_task(run()))
-
     async def close_session(self, ref: SessionRef) -> None:
-        """Close the referenced incarnation regardless of its current output epoch."""
         session = self.sessions.get(ref.session_id)
         if session is None:
             return
-        if session.ref.incarnation != ref.incarnation:
+        if session.ref != ref:
             raise ValueError("stale session reference")
         await asyncio.shield(self.owned_session_task(self.close_session_state(session)))
         if session.cleanup_error is not None:

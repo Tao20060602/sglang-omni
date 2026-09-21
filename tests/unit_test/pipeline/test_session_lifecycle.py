@@ -167,24 +167,6 @@ async def test_partial_open_releases_previously_opened_owner(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_cancel_failure_closes_owners_in_reverse_order(tmp_path):
-    async with pipeline(tmp_path) as (coordinator, events, processes):
-        ref = await coordinator.open_session(
-            OmniRequest(None, {"cannot_abort": True}),
-            stages=["source", "sink"],
-            session_id="reused",
-        )
-        with pytest.raises(RuntimeError, match="cannot be retained"):
-            await coordinator.abort_session(ref)
-        log = [await asyncio.to_thread(events.get, True, 1) for _ in range(5)]
-        assert [entry[1] for entry in log if entry[0] == "close"] == ["sink", "source"]
-        reopened = await coordinator.open_session(
-            OmniRequest(None), stages=["source", "sink"], session_id="reused"
-        )
-        await coordinator.close_session(reopened)
-
-
-@pytest.mark.asyncio
 async def test_output_overflow_closes_session(tmp_path):
     async with pipeline(tmp_path) as (coordinator, events, processes):
         ref = await coordinator.open_session(

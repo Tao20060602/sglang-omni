@@ -59,26 +59,21 @@ def test_stage_capacity_is_aggregate():
         def open(self, ref, request):
             return {"id": ref.session_id, "bytes": 2}
 
-        def abort(self, state, ref):
-            state["bytes"] = 0
-
         def usage(self, state):
             return ResourceUsage(bytes=state["bytes"])
 
     events = queue.Queue()
     scheduler = SessionScheduler(SizedHooks("source", events), max_state_bytes=3)
 
-    def invoke(sid, op, epoch=0):
-        request = OmniRequest(
-            None, metadata=command_metadata(op, SessionRef(sid, epoch=epoch))
-        )
+    def invoke(sid, op):
+        request = OmniRequest(None, metadata=command_metadata(op, SessionRef(sid)))
         return compute_registered(scheduler, StagePayload(sid + op, request, {}))
 
     invoke("one", "open")
     with pytest.raises(QueueFullError):
         invoke("two", "open")
     assert events.get_nowait() == ("close", "source", "two")
-    invoke("one", "abort", epoch=1)
+    invoke("one", "close")
     invoke("two", "open")
     scheduler.stop()
     closed = sorted(events.get_nowait()[2] for _ in range(events.qsize()))

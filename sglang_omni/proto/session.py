@@ -11,14 +11,13 @@ import msgspec
 SESSION_METADATA_KEY = "omni_session"
 # Note (Junnan Li): msgspec encodes bytes as base64 text by default; keep them native on both sides.
 BUILTIN_TYPES = (bytes,)
-SessionOp = Literal["open", "append", "abort", "close"]
+SessionOp = Literal["open", "append", "close"]
 
 
 @dataclass(frozen=True)
 class SessionRef:
     session_id: str
     incarnation: int = 1
-    epoch: int = 0
 
 
 @dataclass(frozen=True)

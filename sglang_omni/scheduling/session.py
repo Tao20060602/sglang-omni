@@ -46,10 +46,6 @@ class SessionHooks:
     ) -> StagePayload:
         raise NotImplementedError
 
-    def abort(self, state: Any, ref: SessionRef) -> None:
-        """Retain a usable context or raise to require closing the session."""
-        raise NotImplementedError("this stage cannot retain context after abort")
-
     def close(self, state: Any) -> None:
         raise NotImplementedError
 
@@ -59,7 +55,6 @@ class SessionHooks:
 
 @dataclass
 class StageSession:
-    ref: SessionRef
     state: Any
     lock: threading.Lock = field(default_factory=threading.Lock)
     usage: ResourceUsage = field(default_factory=ResourceUsage)
@@ -228,20 +223,19 @@ class SessionScheduler(SimpleScheduler):
         with self.session_lock:
             self.sessions.pop(key, None)
 
-    def update_usage(self, session: StageSession, *, admit: bool = True) -> None:
+    def update_usage(self, session: StageSession) -> None:
         usage = self.hooks.usage(session.state)
         with self.session_lock:
             session.usage = usage
             if (
-                admit
-                and sum(s.usage.bytes for s in self.sessions.values())
+                sum(s.usage.bytes for s in self.sessions.values())
                 > self.max_state_bytes
             ):
                 raise QueueFullError()
 
     def open_session(self, ref: SessionRef, request: OmniRequest) -> None:
         key = (ref.session_id, ref.incarnation)
-        session = StageSession(ref, None)
+        session = StageSession(None)
         session.lock.acquire()
         with self.session_lock:
             if self.closing:
@@ -290,16 +284,6 @@ class SessionScheduler(SimpleScheduler):
                 return payload
             if self.closing:
                 raise RuntimeError("session scheduler is stopping")
-            if op == "abort":
-                if ref.epoch != session.ref.epoch + 1:
-                    raise ValueError("invalid abort epoch")
-                self.hooks.abort(session.state, ref)
-                session.ref = ref
-                self.update_usage(session, admit=False)
-                payload.data = {"aborted": True}
-                return payload
-            if ref != session.ref:
-                raise ValueError("stale session epoch")
             input_chunk = command.chunk
             assert input_chunk is not None, "append command carries no chunk"
             event = threading.Event()

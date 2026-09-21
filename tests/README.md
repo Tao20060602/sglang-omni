@@ -924,10 +924,8 @@ that happened to contain an older version of the test.
 
 - `unit_test/pipeline/test_session_flow.py`: Ordered units, concurrent input/output,
   EOS receipts, configured routes, replica ownership, and input-clear accounting.
-- `unit_test/pipeline/test_session_cancel.py`: Output epoch fencing, retained
-  pending input and completion receipts, and finishing active units on cancel.
 - `unit_test/pipeline/test_session_lifecycle.py`: Input/output limits, sequence
-  rejection, partial open, failed cancellation, timeout quarantine, worker failure,
+  rejection, partial open, slow close, worker failure,
   and scoped shutdown.
   These use `unit_test/fixtures/session_pipeline.py` for real spawned Stage workers,
   ZMQ control messages and shared-memory tensor relay. Only model hooks are synthetic;

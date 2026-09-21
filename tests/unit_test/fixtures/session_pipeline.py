@@ -94,11 +94,6 @@ class Hooks(SessionHooks):
             payload.data = {"count": state["n"]}
         return payload
 
-    def abort(self, state: State, ref: SessionRef) -> None:
-        self.events.put(("abort", self.name, state["id"]))
-        if state["params"].get("cannot_abort"):
-            raise RuntimeError("state cannot be retained")
-
     def close(self, state: State) -> None:
         self.events.put(("close", self.name, state["id"]))
         if state["params"].get("fail_close_once") == self.name:
