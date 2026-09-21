@@ -37,21 +37,22 @@ async def test_timeout_cancel_noop_waits_before_close(tmp_path):
         await coordinator.append_session(ref, chunk(0))
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(anext(output), 5)
-        # Note (Junnan Li): A failed close retains the session reservation until worker teardown.
-        assert coordinator.sessions[ref.session_id].cleanup_error is not None
-        await asyncio.sleep(0.4)
-        log = []
-        while not events.empty():
-            log.append(events.get(timeout=1))
+        await asyncio.wait_for(coordinator.close_session(ref), 5)
+        assert ref.session_id not in coordinator.sessions
+        log = drain(events)
         finished = next(i for i, e in enumerate(log) if e[:2] == ("finished", "sink"))
-        # Note (Junnan Li): The coordinator gave up on this close, but the stage still runs it after the hook.
-        close_positions = [i for i, e in enumerate(log) if e[:2] == ("close", "sink")]
-        assert len(close_positions) == 1 and close_positions[0] > finished
-        assert not any(e[:2] == ("close", "source") for e in log)
+        # Note (Junnan Li): Close waits for the hook that outlived the command timeout, then closes upstream.
+        closed = [(i, e[1]) for i, e in enumerate(log) if e[0] == "close"]
+        assert [owner for _, owner in closed] == ["sink", "source"]
+        assert closed[0][0] > finished
+        second = await coordinator.open_session(
+            OmniRequest(None), stages=["source", "sink"]
+        )
+        await coordinator.close_session(second)
 
 
 @pytest.mark.asyncio
-async def test_open_timeout_quarantines_and_worker_shutdown_releases(tmp_path):
+async def test_open_timeout_closes_the_opened_owner(tmp_path):
     async with pipeline(tmp_path) as (coordinator, events, processes):
         with pytest.raises(TimeoutError):
             await coordinator.open_session(
@@ -60,32 +61,24 @@ async def test_open_timeout_quarantines_and_worker_shutdown_releases(tmp_path):
                 session_id="slow-open",
                 limits=SessionLimits(command_timeout_s=0.08),
             )
-        assert coordinator.sessions["slow-open"].cleanup_error is not None
-        await asyncio.sleep(0.4)
-        with pytest.raises(RuntimeError, match="capacity remains reserved"):
-            await coordinator.close_session(coordinator.sessions["slow-open"].ref)
+        assert "slow-open" not in coordinator.sessions
+        assert [e[1] for e in drain(events) if e[0] == "close"] == ["source"]
+        second = await coordinator.open_session(
+            OmniRequest(None), stages=["source", "sink"], session_id="slow-open"
+        )
+        await coordinator.close_session(second)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reason", ["close_rejected", "pump_unresponsive"])
-async def test_unconfirmed_owner_release_blocks_new_sessions(tmp_path, reason):
+async def test_unconfirmed_owner_release_blocks_new_sessions(tmp_path):
     async with pipeline(tmp_path) as (coordinator, events, processes):
-        params = {"fail_close_once": "source"}
-        if reason == "pump_unresponsive":
-            params = {"ignore_cancel": True, "delay": 0.3}
         ref = await coordinator.open_session(
-            OmniRequest(None, params), stages=["source", "sink"], session_id="held"
+            OmniRequest(None, {"fail_close_once": "source"}),
+            stages=["source", "sink"],
+            session_id="held",
         )
-        if reason == "pump_unresponsive":
-            coordinator.sessions["held"].limits = SessionLimits(command_timeout_s=0.1)
-            output = coordinator.session_outputs(ref)
-            await coordinator.append_session(ref, chunk(0))
-            with pytest.raises(TimeoutError):
-                await asyncio.wait_for(anext(output), 5)
-            await output.aclose()
-        else:
-            with pytest.raises(RuntimeError, match="cleanup incomplete"):
-                await coordinator.close_session(ref)
+        with pytest.raises(RuntimeError, match="cleanup incomplete"):
+            await coordinator.close_session(ref)
         assert coordinator.sessions["held"].cleanup_error is not None
         with pytest.raises(ValueError, match="unavailable owner"):
             await coordinator.open_session(OmniRequest(None), stages=["source", "sink"])
@@ -95,11 +88,9 @@ async def test_unconfirmed_owner_release_blocks_new_sessions(tmp_path, reason):
             )
         with pytest.raises(RuntimeError, match="capacity remains reserved"):
             await coordinator.close_session(ref)
-        if reason == "close_rejected":
-            # Note (Junnan Li): Owners close downstream first; the rejected owner and those upstream stay unconfirmed.
-            closed = [e[1] for e in drain(events) if e[0] == "close"]
-            assert closed == ["sink", "source"]
-        await asyncio.sleep(0.4)
+        # Note (Junnan Li): Owners close downstream first; the rejected owner and those upstream stay unconfirmed.
+        closed = [e[1] for e in drain(events) if e[0] == "close"]
+        assert closed == ["sink", "source"]
 
 
 @pytest.mark.asyncio
@@ -305,11 +296,6 @@ async def test_closing_rejects_input_before_cleanup(tmp_path, monkeypatch, trigg
             release.set()
             if task is not None:
                 await asyncio.wait_for(task, 5)
-            elif trigger == "command_timeout":
-                # Note (Junnan Li): The hook outlives the command timeout, so close reports incomplete cleanup.
-                with pytest.raises(RuntimeError, match="capacity remains reserved"):
-                    await asyncio.wait_for(coordinator.close_session(ref), 5)
-                await asyncio.sleep(0.4)
             else:
                 await asyncio.wait_for(coordinator.close_session(ref), 5)
 

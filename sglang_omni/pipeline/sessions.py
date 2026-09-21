@@ -360,7 +360,10 @@ class CoordinatorSessions:
             await self._completion_futures[request_id]
 
         try:
-            await asyncio.wait_for(run(), session.limits.command_timeout_s)
+            if op == "close":
+                await run()
+            else:
+                await asyncio.wait_for(run(), session.limits.command_timeout_s)
         except asyncio.TimeoutError as exc:
             self.begin_session_close(session)
             raise TimeoutError(f"session {op} timed out") from exc
