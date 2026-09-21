@@ -94,3 +94,29 @@ async def test_open_loop_arrivals_overlap_in_flight_requests(
 
     assert len(starts) == 8
     assert max(starts) - min(starts) < 0.25
+
+
+@pytest.mark.asyncio
+async def test_requests_that_queue_for_a_client_slot_are_marked() -> None:
+    async def _send(_session, sample: str) -> RequestResult:
+        await asyncio.sleep(0.05)
+        return RequestResult(request_id=sample, is_success=True)
+
+    runner = BenchmarkRunner(RunConfig(max_concurrency=1, warmup=0, disable_tqdm=True))
+    results = await runner.run(["a", "b", "c"], _send)
+
+    # note (luojiaxuan): with one slot and instant arrivals only the first
+    # request starts on time; the rest waited, so their clocks started late.
+    assert [r.waited_for_slot for r in results] == [False, True, True]
+
+
+@pytest.mark.asyncio
+async def test_requests_that_get_a_slot_at_once_are_not_marked() -> None:
+    async def _send(_session, sample: str) -> RequestResult:
+        await asyncio.sleep(0.05)
+        return RequestResult(request_id=sample, is_success=True)
+
+    runner = BenchmarkRunner(RunConfig(max_concurrency=8, warmup=0, disable_tqdm=True))
+    results = await runner.run(["a", "b", "c"], _send)
+
+    assert not any(r.waited_for_slot for r in results)

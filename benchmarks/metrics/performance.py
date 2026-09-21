@@ -163,6 +163,9 @@ def compute_speed_metrics(
         "total_requests": len(outputs),
         "completed_requests": len(successes),
         "failed_requests": len(outputs) - len(successes),
+        "client_slot_waits": sum(
+            1 for o in outputs if getattr(o, "waited_for_slot", False)
+        ),
         "latency_mean_s": round(float(np.mean(latencies)), 3),
         "latency_median_s": round(float(np.median(latencies)), 3),
         "latency_p95_s": round(float(np.percentile(latencies, 95)), 3),
@@ -419,4 +422,5 @@ def _request_result_to_dict(output: RequestResult) -> dict:
         ),
         "audio_chunk_count": output.audio_chunk_count or None,
         "first_audio_payload_bytes": output.first_audio_payload_bytes or None,
+        "waited_for_slot": output.waited_for_slot,
     }

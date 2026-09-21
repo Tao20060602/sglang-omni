@@ -42,9 +42,31 @@ class TtsCiThresholdPreset:
 
 
 @dataclass(frozen=True)
+class TtsCiLatencyPoint:
+    """One open-loop streaming operating point of the latency stage."""
+
+    request_rate: float
+    samples: int
+    # note (luojiaxuan): None until the point is calibrated on the CI host, so
+    # the stage prints the median without judging it.
+    ttfp_median_max_s: float | None = None
+
+
+@dataclass(frozen=True)
+class TtsCiLatencyPreset:
+    """Streaming first-audio latency points measured against one worker."""
+
+    points: tuple[TtsCiLatencyPoint, ...]
+    calibrated: bool = False
+
+
+@dataclass(frozen=True)
 class TtsCiPreset:
     model: TtsCiModelPreset
     thresholds: TtsCiThresholdPreset
+    # note (luojiaxuan): only the arms whose first-audio latency is being
+    # worked on carry this; the stage skips the others.
+    latency: TtsCiLatencyPreset | None = None
 
 
 # Slack factors applied to P95 reference values to derive CI thresholds.
@@ -196,6 +218,17 @@ QWEN3_TTS_VC_STREAM_THRESHOLDS = apply_slack(
 )
 
 
+QWEN3_TTS_LATENCY = TtsCiLatencyPreset(
+    # note (luojiaxuan): 1 rps is the idle first-chunk path, 20 rps the loaded
+    # one; the loaded point is the full EN corpus so its p95 has support.
+    points=(
+        TtsCiLatencyPoint(request_rate=1.0, samples=60),
+        TtsCiLatencyPoint(request_rate=20.0, samples=1088),
+    ),
+    calibrated=False,
+)
+
+
 TTS_CI_PRESETS: dict[str, TtsCiPreset] = {
     "higgs": TtsCiPreset(
         model=TtsCiModelPreset(
@@ -242,6 +275,7 @@ TTS_CI_PRESETS: dict[str, TtsCiPreset] = {
             similarity_mean_min=QWEN3_TTS_VC_SIMILARITY_MEAN_MIN,
             utmos_mean_min=QWEN3_TTS_VC_UTMOS_MEAN_MIN,
         ),
+        latency=QWEN3_TTS_LATENCY,
     ),
     "qwen3-tts-custom-voice": TtsCiPreset(
         model=TtsCiModelPreset(
@@ -276,6 +310,7 @@ TTS_CI_PRESETS: dict[str, TtsCiPreset] = {
             utmos_mean_min=QWEN3_TTS_CUSTOM_VOICE_UTMOS_MEAN_MIN,
             calibrated=False,
         ),
+        latency=QWEN3_TTS_LATENCY,
     ),
     "moss": TtsCiPreset(
         model=TtsCiModelPreset(

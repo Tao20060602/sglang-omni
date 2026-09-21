@@ -91,10 +91,12 @@ TTS_ALLOWED_CONCURRENCIES = (1, 2, 4, 8, 16)
 TTS_STAGE_NONSTREAM = "tts-stage-1-nonstream"
 TTS_STAGE_STREAM = "tts-stage-2-stream"
 TTS_STAGE_CONSISTENCY = "tts-stage-3-consistency"
+TTS_STAGE_LATENCY = "tts-stage-latency"
 TTS_CI_STAGES = (
     TTS_STAGE_NONSTREAM,
     TTS_STAGE_STREAM,
     TTS_STAGE_CONSISTENCY,
+    TTS_STAGE_LATENCY,
 )
 TTS_FULL_SWEEP_VALUE = "all"
 TTS_STAGE_ALL = "all"

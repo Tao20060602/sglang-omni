@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -48,6 +49,7 @@ from benchmarks.metrics.performance import print_saved_tts_speed_summary
 from benchmarks.metrics.wer import print_wer_summary
 from tests.test_model.conftest import (
     TTS_STAGE_CONSISTENCY,
+    TTS_STAGE_LATENCY,
     TTS_STAGE_NONSTREAM,
     TTS_STAGE_STREAM,
 )
@@ -158,6 +160,7 @@ def _run_benchmark(
     max_samples: int | None = None,
     warmup: int = 1,
     stream: bool = False,
+    request_rate: float = float("inf"),
 ) -> dict:
     benchmark_config = TtsSeedttsBenchmarkConfig(
         model=TTS_MODEL_PATH,
@@ -168,6 +171,7 @@ def _run_benchmark(
         max_samples=max_samples,
         warmup=warmup,
         stream=stream,
+        request_rate=request_rate,
         ref_format=_PRESET.ref_format,
         token_count=_PRESET.token_count,
         voice=_PRESET.voice,
@@ -740,6 +744,28 @@ def router_server(tmp_path_factory: pytest.TempPathFactory):
 
 
 @pytest.fixture(scope="module")
+def single_worker_router_server(tmp_path_factory: pytest.TempPathFactory):
+    """One TTS worker behind the router, for latency at a fixed offered load.
+
+    Two workers would split 20 rps into 10 rps each, which is not the operating
+    point the first-audio work is measured at.
+    """
+    with launch_managed_router(
+        tmp_path_factory=tmp_path_factory,
+        model_path=TTS_MODEL_PATH,
+        model_name=TTS_MODEL_PATH,
+        worker_extra_args=f"{TTS_WORKER_EXTRA_ARGS} {_PRESET.worker_extra_args}".strip(),
+        router_topology=CiRouterTopology.TTS,
+        num_workers=1,
+        num_gpus_per_worker=_PRESET.num_gpus_per_worker,
+        wait_timeout=STARTUP_TIMEOUT,
+        log_prefix="tts_latency_router_logs",
+        named_voice=not _PRESET.voice_clone,
+    ) as router:
+        yield router
+
+
+@pytest.fixture(scope="module")
 def consistency_stage_inputs(
     selected_tts_ci_stage: str,
     tmp_path_factory: pytest.TempPathFactory,
@@ -1039,6 +1065,122 @@ def test_voice_cloning_streaming_wer(
                 results,
                 _THRESHOLDS.stream_wer_corpus,
                 collector=checks,
+            )
+    checks.assert_all()
+
+
+def _worker_admission_cap() -> int:
+    """The worker's ``max_running_requests``, which bounds the client's slot cap."""
+    match = re.search(
+        r"--tts_engine\.engine\.max_running_requests (\d+)", _PRESET.worker_extra_args
+    )
+    assert match is not None, (
+        "the latency stage needs the preset to pin "
+        "--tts_engine.engine.max_running_requests"
+    )
+    return int(match.group(1))
+
+
+def _assert_open_loop_latency_results(
+    results: dict,
+    *,
+    samples: int,
+    label: str,
+    collector: MetricCheckCollector,
+) -> None:
+    summary = results["summary"]
+    per_request = results.get("per_request") or []
+    collector.check(
+        len(per_request) == samples and summary.get("completed_requests") == samples,
+        f"{label}: {summary.get('completed_requests')}/{len(per_request)} completed, "
+        f"expected {samples}/{samples}",
+    )
+    failed = [r["id"] for r in per_request if not r.get("is_success")]
+    collector.check(not failed, f"{label}: failed requests {failed[:5]}")
+    silent = [
+        r["id"]
+        for r in per_request
+        if r.get("is_success")
+        and not (r.get("audio_chunk_count") and r.get("first_audio_payload_bytes"))
+    ]
+    collector.check(not silent, f"{label}: requests without audio {silent[:5]}")
+    collector.check(
+        summary.get("client_slot_waits") == 0,
+        f"{label}: {summary.get('client_slot_waits')} requests waited for a client "
+        "slot, so the run was not open loop",
+    )
+
+
+def _print_latency_point(summary: dict, *, label: str) -> None:
+    keys = (
+        "audio_ttfp_median_s",
+        "audio_ttfp_p95_s",
+        "audio_ttfp_p99_s",
+        "first_audio_payload_bytes_mean",
+        "audio_chunks_mean",
+        "max_playback_underrun_p95_s",
+        "playback_continuity_c50",
+        "playback_continuity_c100",
+        "playback_continuity_c200",
+        "playback_continuity_requests",
+        "playback_continuity_na_requests",
+        "client_slot_waits",
+    )
+    print(f"\n[TTS latency] {label}")
+    for key in keys:
+        print(f"  {key:<36} {summary.get(key)}")
+
+
+@pytest.mark.tts_stage(TTS_STAGE_LATENCY)
+@pytest.mark.benchmark
+def test_streaming_first_audio_latency(
+    single_worker_router_server: ManagedRouterHandle,
+    dataset_repo: str,
+    tmp_path: Path,
+) -> None:
+    latency = _TTS_CI_PRESET.latency
+    if latency is None:
+        pytest.skip(f"preset {_PRESET.model_path} has no latency points")
+    client_cap = _worker_admission_cap()
+    checks = MetricCheckCollector("TTS streaming first-audio latency")
+    for point in latency.points:
+        label = f"TTS latency stream {point.request_rate:g} rps"
+        _print_stage("TTS latency", "streaming", client_cap, f"{point.request_rate:g} rps")
+        output_dir = _resolve_stage_output_dir(
+            tmp_path, f"vc_latency_r{point.request_rate:g}"
+        )
+        before_workers = router_get_json(single_worker_router_server.port, "/diagnostics")
+        try:
+            results = _run_benchmark(
+                single_worker_router_server.port,
+                dataset_repo,
+                output_dir,
+                concurrency=client_cap,
+                max_samples=point.samples,
+                warmup=client_cap,
+                stream=True,
+                request_rate=point.request_rate,
+            )
+        except Exception:
+            print_router_diagnostics(single_worker_router_server)
+            raise
+        _print_latency_point(results["summary"], label=label)
+        _assert_open_loop_latency_results(
+            results, samples=point.samples, label=label, collector=checks
+        )
+        _assert_stage_used_all_router_workers(
+            router_server=single_worker_router_server,
+            before_workers=before_workers,
+            results=results,
+            label=label,
+            collector=checks,
+        )
+        if latency.calibrated and point.ttfp_median_max_s is not None:
+            median = results["summary"].get("audio_ttfp_median_s")
+            checks.check(
+                median is not None and median <= point.ttfp_median_max_s,
+                f"{label}: first playable median {median} s exceeds "
+                f"{point.ttfp_median_max_s} s",
             )
     checks.assert_all()
 

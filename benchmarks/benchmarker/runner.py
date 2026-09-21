@@ -132,8 +132,10 @@ class BenchmarkRunner:
 
         async def _limited(sample: Any) -> RequestResult:
             if semaphore:
+                waited_for_slot = semaphore.locked()
                 async with semaphore:
                     result = await send_fn(session, sample)
+                result.waited_for_slot = waited_for_slot
             else:
                 result = await send_fn(session, sample)
             pbar.update(1)

@@ -68,6 +68,28 @@ def test_the_workflow_rotation_is_the_calibrated_presets() -> None:
 
 
 @pytest.mark.parametrize("name", sorted(TTS_CI_PRESETS))
+def test_the_latency_stage_covers_exactly_the_qwen3_tts_arms(name: str) -> None:
+    """The first-audio latency work is on Qwen3-TTS, so those arms carry the
+    latency points and no other arm does."""
+    preset = TTS_CI_PRESETS[name]
+    is_qwen3_tts = preset.model.model_path.startswith("Qwen/Qwen3-TTS")
+    assert (preset.latency is not None) == is_qwen3_tts
+
+
+@pytest.mark.parametrize("name", sorted(TTS_CI_PRESETS))
+def test_an_uncalibrated_latency_preset_judges_nothing(name: str) -> None:
+    """Until the points are calibrated on the CI host, no point carries a
+    threshold, so the stage can only print."""
+    latency = TTS_CI_PRESETS[name].latency
+    if latency is None:
+        return
+    assert latency.points
+    assert all(point.samples > 0 and point.request_rate > 0 for point in latency.points)
+    if not latency.calibrated:
+        assert all(point.ttfp_median_max_s is None for point in latency.points)
+
+
+@pytest.mark.parametrize("name", sorted(TTS_CI_PRESETS))
 def test_the_router_profile_matches_the_preset_request_shape(name: str) -> None:
     """A preset's requests have to match a profile the CI router advertises."""
     from tests.test_model.rust_router_config import (
