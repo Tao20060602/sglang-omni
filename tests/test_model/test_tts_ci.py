@@ -1157,7 +1157,6 @@ def test_streaming_first_audio_latency(
                 output_dir,
                 concurrency=client_cap,
                 max_samples=point.samples,
-                warmup=client_cap,
                 stream=True,
                 request_rate=point.request_rate,
             )
