@@ -1342,3 +1342,31 @@ preset 的 `startup_timeout` 从 300 改成 900 s(Tilde 冷编译,CI runner 有�
 **UTMOS 重跑(作业 366189,03:33-04:00 PT)**:装上 FFmpeg 8.1 共享库后,三个臂的第 1 阶段全部通过:
 #2217 臂 4 passed,#2216 臂 4 passed,#2094 的 CustomVoice 臂 3 passed + 1 skipped(相似度按设计跳过)。
 连同前一轮各臂第 2 阶段的 2 passed,**三个 PR 的 qwen3-tts 线全绿**。
+
+## 第三十二轮:在 main + #2216 + #2217 上重做 torch profiler 与 nsys,开下一轮的 tracking issue(2026-09-21 16:43-17:31 PT)
+
+Tilde worker-15,单卡(账号有"每人最多两个节点"的限制,把作业钉到已占用的节点上才排进去),树是 main `9f1260e6` + 两个 PR。
+torch profiler 先不带栈采一轮(rps 1 8 秒、rps 20 2 秒),再带 `SGLANG_TORCH_PROFILER_WITH_STACK=1 RECORD_SHAPES=1` 采一轮
+(带栈的 trace 有 70 万条 `python_function` 事件,kernel 能映射回 Python 帧,留给候选实现时用),最后 nsys 带 GPU metrics(20 kHz)。
+导出用第二十二轮那套"等文件稳定再验 gzip"的办法,四份 torch trace 全部完整。
+
+**decode 步(talker 流,p50)**:rps 1 步长 6.06 = talker 1.99 + predictor 3.81 + 空洞 0.09;rps 20 步长 9.75 = 2.36 + 4.17 + 1.23(p95 12 ms)。
+rps 20 的步长比不带 profiler 的 7.6 长,是 `with_stack` 把主机侧放大了;图重放时间是 GPU 侧的,与前几轮一致。
+
+**nsys GPU metrics(整窗均值;GR Active 在 20 kHz 下没有一个采样是 0,所以没有"忙碌子集"可分)**:
+
+| | SM Issue | SMs Active | DRAM 读 | Tensor Active | 在飞 warp |
+|---|---|---|---|---|---|
+| rps 1 | 1.2% | 7.5% | 7.3% | 0.3% | 2.3% |
+| rps 20 | 10.8%(p90 36%) | 35.0%(p90 81%) | 13.4%(p90 33%) | 2.3% | 10.1% |
+
+和 09-14 那份剖面同一个结论:没有任何一项饱和,GPU 发射效率低是因为工作由成千上万个小 kernel 组成;GPC 时钟稳在 1.98 GHz。
+
+**GPU 时间去向**:rps 1 下 predictor 的小 GEMM 占全部 kernel 时间的 35%(11.9 万次、7.4 us),种子采样内核 5.7%。
+rps 20 下换了面孔:predictor 更宽的 GEMM 分片 6.7%,然后是两项 rps 1 下看不见的 vocoder 项——
+`cudnn nchwToNhwcKernel` 6.3%(2 万次、12.7 us)和 `implicit_convolve_sgemm` 6.1%(396 次、每次 634 us),采样内核 3.1%。
+这两项是没编译的 chunk 宽度走的 eager 卷积路径,在 vocoder 的流上;合计 12.4%,比第二十二轮估的 5.6% 大——JiaxinD 在 #2217 上问的
+"WARM/WINDOW 宽度仍是 eager"指的正是这条路,它不影响首帧(首块已编译),影响的是连续性与尾部。C11 的定位据此改写。
+
+**产出**:tracking issue **#2294**(挂在 #1754 下面),把 5 个 PR 的现状、这轮剖面、剩余候选(C6/C7/C5/C11)与判死清单写成一页;
+CI 阶段 **#2293**(叠在 #2094 上)加了 `tts-stage-latency`,设计经外审修订(见 `docs/reviews/2026-09-21-qwen3-tts-latency-ci-stage.md`)。
