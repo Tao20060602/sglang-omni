@@ -46,9 +46,8 @@ from sglang_omni.serve.realtime.events import (
 )
 from sglang_omni.serve.realtime.vad import (
     VAD_FRAME_SAMPLES,
-    StreamingVAD,
+    StatelessVAD,
     VADConfig,
-    VADEvent,
     offsets_to_ms,
 )
 from sglang_omni.serve.transcription_chunking import (
@@ -169,12 +168,14 @@ class RealtimeTranscriptionSession:
             target_sr=PCM_SAMPLE_RATE,
             max_bytes=max_buffer_bytes,
         )
-        self.vad: StreamingVAD | None = self.new_vad(self.settings.turn_detection)
-        self.vad_origin_samples = 0
+        self.vad: StatelessVAD | None = self.new_vad(self.settings.turn_detection)
         self.buffer_origin_samples = 0
         self.active_segment: ActiveTranscriptionSegment | None = None
         self.committed_segments: list[CommittedTranscriptionSegment] = []
         self._next_segment_id = 0
+        self._last_closed_segment_id: int | None = (
+            None  # The segment most recently closed by queue_final.
+        )
         self._decode_event = asyncio.Event()
         self._pending_finals: deque[FinalDecode] = deque()
         self._final_waiters: set[asyncio.Future[None]] = set()
@@ -232,18 +233,6 @@ class RealtimeTranscriptionSession:
                 "internal_error",
                 f"Internal error while handling {event.type}.",
             )
-            self.resync_vad_after_failure()
-
-    def resync_vad_after_failure(self) -> None:
-        # Note (Jeffro): vad.process() flips its own is_speech before the session handles the
-        # onset, if handling failed before a segment existed, the VAD would
-        # stay in speech state and never report this utterance again. Reset it
-        # so the next speech frame re-emits speech_started. With an active
-        # segment the two are still consistent and nothing needs to change.
-        if self.vad is None or self.active_segment is not None:
-            return
-        self.vad.reset()
-        self.vad_origin_samples = self.buffer_origin_samples
 
     async def send(self, event: dict[str, Any] | TranscriptionServerEvent) -> None:
         if self.closed:
@@ -327,10 +316,10 @@ class RealtimeTranscriptionSession:
         return None
 
     @classmethod
-    def new_vad(cls, turn_detection: TurnDetection | None) -> StreamingVAD | None:
+    def new_vad(cls, turn_detection: TurnDetection | None) -> StatelessVAD | None:
         if turn_detection is None:
             return None
-        return StreamingVAD(cls.vad_config(turn_detection))
+        return StatelessVAD(cls.vad_config(turn_detection))
 
     async def handle_session_update(self, event: TranscriptionSessionUpdate) -> None:
         update = event.session.model_dump(exclude_unset=True)
@@ -378,7 +367,6 @@ class RealtimeTranscriptionSession:
                 self.vad.reset()
             self.settings.turn_detection = turn_detection
             self.vad = self.new_vad(turn_detection)
-            self.vad_origin_samples = self.buffer_origin_samples
         await self.send(TranscriptionSessionUpdated(session=self.session_object()))
 
     async def handle_audio_append(self, event: InputAudioBufferAppend) -> None:
@@ -412,48 +400,60 @@ class RealtimeTranscriptionSession:
             )
             return
         if self.vad is None:
+            # Note (Jeffro): The VAD = None means as long as pcm comes in and there is no active segment currently,
+            # we can just start a new segment.
             if self.active_segment is None and pcm:
                 self.start_segment(append_start_sample)
         else:
-            emits = await asyncio.to_thread(self.vad.process, pcm)
-            for emit in emits:
-                await self.handle_vad_emit(emit)
+
+            async def vad_on_started(start_sample: int) -> None:
+                # Prefix padding cannot reach audio the buffer no longer holds.
+                start_sample = max(self.buffer_origin_samples, start_sample)
+                segment = self.start_segment(start_sample)
+                await self.send(
+                    TranscriptionSpeechStarted(
+                        audio_start_ms=offsets_to_ms(start_sample),
+                        segment_id=segment.segment_id,
+                    )
+                )
+
+            async def vad_on_stopped(end_sample: int) -> None:
+                segment = self.active_segment
+                
+                has_speech = end_sample > segment.start_sample
+                await self.send(
+                    TranscriptionSpeechStopped(
+                        audio_end_ms=offsets_to_ms(end_sample),
+                        segment_id=(
+                            segment.segment_id
+                            if has_speech
+                            else self._last_closed_segment_id
+                        ),
+                    )
+                )
+                if has_speech:
+                    await self.finalize_through(end_sample)
+                elif segment.last_text:
+                    # A partial was already reported, so it still owes a final.
+                    await self.finalize_through(self.absolute_buffer_end())
+                else:
+                    self.active_segment = None
+
+            await self.vad.process(
+                pcm,
+                append_start_sample,
+                # active_segment is the ONLY record of whether someone is speaking.
+                in_speech=lambda: self.active_segment is not None,
+                on_started=vad_on_started,
+                on_stopped=vad_on_stopped,
+            )
 
         await self.enforce_hard_limit()
         self.trim_idle_prefix()
         self.maybe_schedule_partial()
 
-    def absolute_vad_sample(self, sample_offset: int) -> int:
-        return self.vad_origin_samples + sample_offset
-
     def absolute_buffer_end(self) -> int:
         return self.buffer_origin_samples + self.audio_buffer.num_samples
-
-    async def handle_vad_emit(self, emit: Any) -> None:
-        absolute_sample = self.absolute_vad_sample(emit.sample_offset)
-        if emit.event_type == VADEvent.SPEECH_STARTED:
-            if self.active_segment is None:
-                self.start_segment(absolute_sample)
-            await self.send(
-                TranscriptionSpeechStarted(
-                    audio_start_ms=offsets_to_ms(absolute_sample),
-                    segment_id=self.active_segment.segment_id,
-                )
-            )
-            return
-        if emit.event_type == VADEvent.SPEECH_STOPPED:
-            segment_id = (
-                self.active_segment.segment_id
-                if self.active_segment is not None
-                else None
-            )
-            await self.send(
-                TranscriptionSpeechStopped(
-                    audio_end_ms=offsets_to_ms(absolute_sample),
-                    segment_id=segment_id,
-                )
-            )
-            await self.finalize_through(absolute_sample)
 
     def start_segment(self, start_sample: int) -> ActiveTranscriptionSegment:
         interval_samples = self.settings.decode_interval_ms * PCM_SAMPLE_RATE // 1000
@@ -553,6 +553,7 @@ class RealtimeTranscriptionSession:
         self.audio_buffer.drop_prefix(end_byte)
         self.buffer_origin_samples += end_byte // 2
         self.active_segment = None
+        self._last_closed_segment_id = segment.segment_id
         self._decode_event.set()
         await self.send(
             TranscriptionCommitted(
@@ -717,7 +718,6 @@ class RealtimeTranscriptionSession:
         self.active_segment = None
         if self.vad is not None:
             self.vad.reset()
-        self.vad_origin_samples = self.buffer_origin_samples
 
         self._decode_worker_task = self.spawn_decode_worker()
         await self.send(TranscriptionCleared())
@@ -731,13 +731,11 @@ class RealtimeTranscriptionSession:
                 self.buffer_origin_samples = end_sample
                 self.audio_buffer.clear()
                 self.vad.reset()
-                self.vad_origin_samples = self.buffer_origin_samples
                 return
             self.start_segment(self.buffer_origin_samples)
         await self.finalize_through(end_sample)
         if self.vad is not None:
             self.vad.reset()
-            self.vad_origin_samples = self.buffer_origin_samples
 
     async def handle_transcription_done(self, event: TranscriptionDone) -> None:
         del event
