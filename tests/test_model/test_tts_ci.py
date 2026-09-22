@@ -543,11 +543,13 @@ def _assert_stage_used_all_router_workers(
     results: dict,
     label: str,
     collector: MetricCheckCollector | None = None,
+    expected_workers: int = 2,
 ) -> None:
     kwargs = {
         "handle": router_server,
         "before_snapshot": before_workers,
         "label": label,
+        "expected_workers": expected_workers,
         "min_total_requests": results["summary"]["completed_requests"],
     }
     if collector is None:
@@ -1119,9 +1121,9 @@ def _print_latency_point(summary: dict, *, label: str) -> None:
         "first_audio_payload_bytes_mean",
         "audio_chunks_mean",
         "max_playback_underrun_p95_s",
-        "playback_continuity_c50",
-        "playback_continuity_c100",
-        "playback_continuity_c200",
+        "c50",
+        "c100",
+        "c200",
         "playback_continuity_requests",
         "playback_continuity_na_requests",
         "client_slot_waits",
@@ -1173,6 +1175,7 @@ def test_streaming_first_audio_latency(
             results=results,
             label=label,
             collector=checks,
+            expected_workers=1,
         )
         if latency.calibrated and point.ttfp_median_max_s is not None:
             median = results["summary"].get("audio_ttfp_median_s")
